@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reality to Brick - Video Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #8892b0;
+            font-size: 1.1rem;
+        }
+
+        .upload-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 40px;
+            border: 2px dashed #3d5a80;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-section:hover, .upload-section.drag-over {
+            border-color: #f39c12;
+            background: rgba(243, 156, 18, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(243, 156, 18, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .video-preview {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .video-preview video {
+            max-width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .progress-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .status-text {
+            color: #8892b0;
+            font-size: 0.95rem;
+        }
+
+        .results-section {
+            margin-top: 40px;
+            display: none;
+        }
+
+        .results-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .results-card h3 {
+            color: #f39c12;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .result-item {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .result-item label {
+            display: block;
+            color: #8892b0;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .result-item .value {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .colors-display {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .color-swatch {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            cursor: pointer;
+        }
+
+        .color-swatch:hover::after {
+            content: attr(data-color);
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.75rem;
+            color: #8892b0;
+            white-space: nowrap;
+        }
+
+        .complexity-flags {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .flag {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .flag.active {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+        }
+
+        .flag.inactive {
+            background: rgba(231, 76, 60, 0.1);
+            color: #e74c3c;
+        }
+
+        .error-message {
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid #e74c3c;
+            color: #e74c3c;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .json-output {
+            background: #0d1117;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin-top: 15px;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+            .upload-section {
+                padding: 25px;
+            }
+            .results-card {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧱 Reality to Brick</h1>
+            <p class="subtitle">Upload a video to extract object dimensions, colors, and complexity</p>
+        </header>
+
+        <div class="upload-section" id="dropZone">
+            <div class="upload-icon">📹</div>
+            <p class="upload-text">Drag & drop your video here</p>
+            <p class="upload-hint">or click to browse (MP4, MOV, AVI, WebM)</p>
+            <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-msvideo,video/webm">
+        </div>
+
+        <div class="video-preview" id="videoPreview">
+            <video id="previewVideo" controls></video>
+            <div class="file-info">
+                <span id="fileName"></span>
+                <span id="fileSize"></span>
+            </div>
+            <button class="btn" id="analyzeBtn">🚀 Analyze Video</button>
+        </div>
+
+        <div class="progress-section" id="progressSection">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p class="status-text" id="statusText">Uploading video...</p>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="results-section" id="resultsSection">
+            <div class="results-card">
+                <h3>📐 Dimensions (mm)</h3>
+                <div class="result-grid">
+                    <div class="result-item">
+                        <label>Height</label>
+                        <div class="value" id="dimHeight">-</div>
+                    </div>
+                    <div class="result-item">
+                        <label>Width</label>
+                        <div class="value" id="dimWidth">-</div>
+                    </div>
+                    <div class="result-item">
+                        <label>Depth</label>
+                        <div class="value" id="dimDepth">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-card">
+                <h3>🎨 Dominant Colors</h3>
+                <div class="colors-display" id="colorsDisplay"></div>
+            </div>
+
+            <div class="results-card">
+                <h3>🧩 Complexity Analysis</h3>
+                <div class="complexity-flags" id="complexityFlags"></div>
+            </div>
+
+            <div class="results-card">
+                <h3>📄 Raw JSON Response</h3>
+                <pre class="json-output" id="jsonOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const videoPreview = document.getElementById('videoPreview');
+        const previewVideo = document.getElementById('previewVideo');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressFill = document.getElementById('progressFill');
+        const statusText = document.getElementById('statusText');
+        const resultsSection = document.getElementById('resultsSection');
+        const errorMessage = document.getElementById('errorMessage');
+
+        let selectedFile = null;
+
+        // Drag and drop handlers
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            // Validate file type
+            const allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
+            if (!allowedTypes.includes(file.type)) {
+                showError('Invalid file type. Please upload MP4, MOV, AVI, or WebM.');
+                return;
+            }
+
+            selectedFile = file;
+            hideError();
+
+            // Show preview
+            const url = URL.createObjectURL(file);
+            previewVideo.src = url;
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = formatFileSize(file.size);
+            videoPreview.style.display = 'block';
+            resultsSection.style.display = 'none';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            analyzeBtn.disabled = true;
+            progressSection.style.display = 'block';
+            resultsSection.style.display = 'none';
+            hideError();
+
+            // Simulate progress for upload
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                if (progress < 30) {
+                    progress += 2;
+                    progressFill.style.width = progress + '%';
+                }
+            }, 100);
+
+            try {
+                statusText.textContent = 'Uploading video...';
+                
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                // Update progress for indexing phase
+                setTimeout(() => {
+                    if (progress < 60) {
+                        statusText.textContent = 'Indexing video with TwelveLabs...';
+                        progress = 40;
+                        progressFill.style.width = progress + '%';
+                    }
+                }, 2000);
+
+                setTimeout(() => {
+                    if (progress < 80) {
+                        statusText.textContent = 'Analyzing object properties...';
+                        progress = 70;
+                        progressFill.style.width = progress + '%';
+                    }
+                }, 5000);
+
+                const response = await fetch('/api/process-video', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearInterval(progressInterval);
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to process video');
+                }
+
+                progressFill.style.width = '100%';
+                statusText.textContent = 'Analysis complete!';
+
+                const data = await response.json();
+                displayResults(data);
+
+            } catch (error) {
+                clearInterval(progressInterval);
+                showError(error.message);
+                progressSection.style.display = 'none';
+            } finally {
+                analyzeBtn.disabled = false;
+            }
+        });
+
+        function displayResults(data) {
+            const analysis = data.analysis;
+            
+            // Log for debugging
+            console.log('Analysis data:', analysis);
+
+            // Display dimensions with fallbacks
+            const rawVision = analysis.raw_vision_data || {};
+            const dims = rawVision.estimated_dimensions_mm || {};
+            document.getElementById('dimHeight').textContent = (dims.h || dims.height || 0).toFixed(1);
+            document.getElementById('dimWidth').textContent = (dims.w || dims.width || 0).toFixed(1);
+            document.getElementById('dimDepth').textContent = (dims.d || dims.depth || 0).toFixed(1);
+
+            // Display colors (extract unique colors from voxel_cloud)
+            const colorsDisplay = document.getElementById('colorsDisplay');
+            colorsDisplay.innerHTML = '';
+            const voxelCloud = rawVision.voxel_cloud || [];
+            const uniqueColors = [...new Set(voxelCloud.map(v => v.color_hex).filter(Boolean))];
+            
+            if (uniqueColors.length === 0) {
+                colorsDisplay.innerHTML = '<span style="color: #8892b0;">No colors detected</span>';
+            } else {
+                uniqueColors.forEach(color => {
+                    const swatch = document.createElement('div');
+                    swatch.className = 'color-swatch';
+                    swatch.style.backgroundColor = color;
+                    swatch.setAttribute('data-color', color);
+                    swatch.title = color;
+                    colorsDisplay.appendChild(swatch);
+                });
+            }
+
+            // Display complexity flags (new schema: structural_metadata)
+            const complexityFlags = document.getElementById('complexityFlags');
+            complexityFlags.innerHTML = '';
+            
+            const metadata = analysis.structural_metadata || {};
+            const flags = [
+                { key: 'is_airy', label: 'Airy Structure', icon: '💨' },
+                { key: 'has_curves', label: 'Has Curves', icon: '🌀' }
+            ];
+
+            flags.forEach(flag => {
+                const value = metadata[flag.key];
+                const div = document.createElement('div');
+                div.className = `flag ${value ? 'active' : 'inactive'}`;
+                div.innerHTML = `${flag.icon} ${flag.label}: ${value ? 'Yes' : 'No'}`;
+                complexityFlags.appendChild(div);
+            });
+
+            // Display missing surfaces
+            if (metadata.missing_surfaces && metadata.missing_surfaces.length > 0) {
+                const div = document.createElement('div');
+                div.className = 'flag inactive';
+                div.innerHTML = `🔍 Missing Surfaces: ${metadata.missing_surfaces.join(', ')}`;
+                complexityFlags.appendChild(div);
+            }
+
+            // Display confidence score
+            const confidence = rawVision.confidence_score || 0;
+            const confidenceDiv = document.createElement('div');
+            confidenceDiv.className = `flag ${confidence > 0.7 ? 'active' : 'inactive'}`;
+            confidenceDiv.innerHTML = `📊 Confidence: ${(confidence * 100).toFixed(0)}%`;
+            complexityFlags.appendChild(confidenceDiv);
+
+            // Display voxel count
+            const voxelDiv = document.createElement('div');
+            voxelDiv.className = 'flag active';
+            voxelDiv.innerHTML = `🧱 Voxels: ${voxelCloud.length}`;
+            complexityFlags.appendChild(voxelDiv);
+
+            // Display raw JSON
+            document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+
+            resultsSection.style.display = 'block';
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
