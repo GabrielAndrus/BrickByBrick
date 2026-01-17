@@ -43,8 +43,9 @@ export interface LegoManifest {
 
 interface PartCache {
   [partId: string]: {
-    geometry: any;
-    material: any;
+    geometry: THREE.BufferGeometry;
+    material: THREE.Material | THREE.Material[];
+    boundingBox: THREE.Box3;
     loaded: boolean;
     loading: boolean;
   };
@@ -56,10 +57,11 @@ interface LegoUniverseProps {
   wireframeScenery?: boolean;
 }
 
-// LDraw part base URL (adjust based on your LDraw library location)
-const LDrawBaseURL = 'https://cdn.jsdelivr.net/npm/ldraw-parts@1.6.4/parts/';
-// Alternative: local path if hosting LDraw files
-// const LDrawBaseURL = '/ldraw/parts/';
+// Official Three.js LDraw library CDN
+const LDrawBaseURL = 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/ldraw/officialLibrary/';
+
+// Scale factor to align LDraw meshes with 1-unit voxel grid
+const LDrawScale = 0.05;
 
 /**
  * Convert rotation degrees to Three.js Euler rotation
@@ -72,44 +74,118 @@ function degreesToEuler(degrees: number): THREE.Euler {
 }
 
 /**
- * Load LDraw part geometry
+ * Load LDraw part geometry with proper configuration
  */
-async function loadLDrawPart(partId: string): Promise<{ geometry: any; material: any }> {
+async function loadLDrawPart(partId: string): Promise<{ geometry: THREE.BufferGeometry; material: THREE.Material[]; boundingBox: THREE.Box3 }> {
   // Dynamically import LDrawLoader to avoid SSR issues
   const { LDrawLoader } = await import('three/examples/jsm/loaders/LDrawLoader.js');
   
   const loader = new LDrawLoader();
   loader.setPartsLibraryPath(LDrawBaseURL);
   
-  // LDraw part files use lowercase with leading zeros
-  // e.g., "3004" becomes "3004.dat"
-  const partFileName = `${partId.toLowerCase()}.dat`;
-  const partUrl = `${LDrawBaseURL}${partFileName}`;
+  // LDraw part files are in the parts/ subdirectory
+  // e.g., "3004" becomes "parts/3004.dat"
+  const partFileName = `${partId}.dat`;
+  const partUrl = `${LDrawBaseURL}parts/${partFileName}`;
   
   return new Promise((resolve, reject) => {
     loader.load(
       partUrl,
       (object) => {
-        // LDrawLoader returns a Group, extract geometry and material
-        const mesh = object.children[0] as any;
-        if (mesh && mesh.geometry && mesh.material) {
-          resolve({
-            geometry: mesh.geometry,
-            material: mesh.material,
-          });
-        } else {
-          reject(new Error(`Invalid LDraw part structure for ${partId}`));
+        // LDrawLoader returns a Group containing multiple meshes
+        // We need to merge all geometries and configure materials
+        const geometries: THREE.BufferGeometry[] = [];
+        const materials: THREE.Material[] = [];
+        const boundingBox = new THREE.Box3();
+
+        // Traverse the group to extract all meshes
+        object.traverse((child: any) => {
+          if (child.isMesh && child.geometry) {
+            // Clone geometry to avoid sharing references
+            const geometry = child.geometry.clone();
+            
+            // Apply scale factor to geometry
+            geometry.scale(LDrawScale, LDrawScale, LDrawScale);
+            
+            geometries.push(geometry);
+            
+            // Configure material for outlines and prevent flickering
+            const material = Array.isArray(child.material) ? child.material[0] : child.material;
+            if (material) {
+              // Enable conditional lines for black outlines (instruction manual style)
+              if (material.userData && material.userData.conditionalLines !== undefined) {
+                material.userData.conditionalLines = true;
+              }
+              
+              // Enable polygon offset to prevent z-fighting/flickering
+              material.polygonOffset = true;
+              material.polygonOffsetFactor = 1;
+              material.polygonOffsetUnits = 1;
+              
+              materials.push(material.clone());
+            }
+            
+            // Expand bounding box
+            geometry.computeBoundingBox();
+            if (geometry.boundingBox) {
+              boundingBox.union(geometry.boundingBox);
+            }
+          }
+        });
+
+        if (geometries.length === 0) {
+          reject(new Error(`No meshes found in LDraw part ${partId}`));
+          return;
         }
+
+        // Merge all geometries into one (or keep separate if materials differ)
+        // For simplicity, merge if all materials are similar
+        const mergedGeometry = geometries.length === 1 
+          ? geometries[0]
+          : THREE.BufferGeometryUtils?.mergeGeometries(geometries, true) || geometries[0];
+
+        // Use the first material or create a combined material array
+        const finalMaterial = materials.length === 1 
+          ? materials[0]
+          : materials;
+
+        // Calculate bounding box center for pivot correction
+        mergedGeometry.computeBoundingBox();
+        const box = mergedGeometry.boundingBox!;
+        const centerY = (box.min.y + box.max.y) / 2;
+        const bottomY = box.min.y;
+
+        // Translate geometry so pivot is at bottom-center (0, 0, 0) relative to brick base
+        // We want the bottom of the brick at Y=0, centered on X and Z
+        const centerX = (box.min.x + box.max.x) / 2;
+        const centerZ = (box.min.z + box.max.z) / 2;
+        
+        // Apply pivot correction: translate so bottom-center is at origin
+        mergedGeometry.translate(-centerX, -bottomY, -centerZ);
+        mergedGeometry.computeBoundingBox();
+
+        resolve({
+          geometry: mergedGeometry,
+          material: finalMaterial,
+          boundingBox: mergedGeometry.boundingBox!.clone(),
+        });
       },
       undefined,
       (error) => {
         console.warn(`Failed to load LDraw part ${partId}:`, error);
-        // Fallback: create a simple box geometry
-        const fallbackGeometry = new THREE.BoxGeometry(8, 9.6, 8); // Standard LEGO brick size
-        const fallbackMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+        // Fallback: create a simple box geometry with proper scale
+        const fallbackGeometry = new THREE.BoxGeometry(1, 1, 1); // 1-unit voxel
+        fallbackGeometry.translate(0, 0.5, 0); // Pivot at bottom-center
+        const fallbackMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0xcccccc,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
         resolve({
           geometry: fallbackGeometry,
           material: fallbackMaterial,
+          boundingBox: new THREE.Box3().setFromObject(new THREE.Mesh(fallbackGeometry)),
         });
       }
     );
@@ -206,17 +282,19 @@ export function LegoUniverse({ manifest, showScenery = true, wireframeScenery = 
       }
 
       partCacheRef.current[partId] = {
-        geometry: null,
-        material: null,
+        geometry: null!,
+        material: null!,
+        boundingBox: new THREE.Box3(),
         loaded: false,
         loading: true,
       };
 
       try {
-        const { geometry, material } = await loadLDrawPart(partId);
+        const { geometry, material, boundingBox } = await loadLDrawPart(partId);
         partCacheRef.current[partId] = {
           geometry,
           material,
+          boundingBox,
           loaded: true,
           loading: false,
         };
@@ -264,18 +342,19 @@ export function LegoUniverse({ manifest, showScenery = true, wireframeScenery = 
         // Update instance matrices
         const matrix = new THREE.Matrix4();
         bricks.forEach((brick, index) => {
-          // Position (convert studs to mm: 1 stud = 8mm)
+          // Position in voxel grid (1 unit = 1 voxel)
+          // Geometry pivot is already at bottom-center, so position directly
           const position = new THREE.Vector3(
-            brick.position[0] * 8,
-            brick.position[1] * 9.6, // LEGO brick height
-            brick.position[2] * 8
+            brick.position[0],
+            brick.position[1],
+            brick.position[2]
           );
 
           // Rotation
           const euler = degreesToEuler(brick.rotation);
           const quaternion = new THREE.Quaternion().setFromEuler(euler);
 
-          // Scale (always 1,1,1 for LEGO bricks)
+          // Scale is already applied to geometry during loading
           const scale = new THREE.Vector3(1, 1, 1);
 
           // Build transformation matrix
