@@ -1,520 +1,274 @@
+"""
+TwelveLabs Visual Intelligence Service
+Based on working pipeline implementation
+"""
+
+import httpx
+import asyncio
 import os
-import time
-import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
+from dotenv import load_dotenv
 
-from twelvelabs import TwelveLabs
-from twelvelabs.errors import TooManyRequestsError, NotFoundError, BadRequestError
-
-from app.models.schemas import ObjectAnalysisResponse, SceneryAnalysisResponse
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 
-class TwelveLabsService:
-    """
-    Service for interacting with TwelveLabs API for video intelligence.
-    Handles video indexing, analysis, and structured extraction.
-    """
+class TwelveLabsAPI:
+    """TwelveLabs API client - requires TWL_INDEX_ID to be set"""
     
     def __init__(self):
-        """Initialize the TwelveLabs client using API key from environment."""
-        api_key = os.getenv("TWELVE_LABS_API_KEY")
-        if not api_key:
-            raise ValueError("TWELVE_LABS_API_KEY environment variable is required")
-        self.client = TwelveLabs(api_key=api_key)
-        self._index_id: Optional[str] = None
+        self.api_key = os.getenv("TWELVE_LABS_API_KEY") or os.getenv("TWL_API_KEY")
+        self.index_id = os.getenv("TWL_INDEX_ID")
+        self.base_url = "https://api.twelvelabs.io/v1.3"
+        
+        if not self.api_key:
+            raise ValueError("TWL_API_KEY environment variable is required")
+        if not self.index_id:
+            raise ValueError("TWL_INDEX_ID environment variable is required")
+        
+        self.headers = {"x-api-key": self.api_key}
     
-    def ensure_index_exists(self, index_name: str = "lego-assembly-index") -> str:
-        """
-        Ensure a video index exists with required engines configured.
-        
-        Args:
-            index_name: Name of the index to create or use
-            
-        Returns:
-            Index ID string
-            
-        Raises:
-            RuntimeError: If index creation or configuration fails
-        """
-        try:
-            # List existing indexes
-            indexes = self.client.indexes.list()
-            
-            # Check if index already exists
-            for index in indexes:
-                if index.index_name == index_name:
-                    logger.info(f"Using existing index: {index.id} ({index.index_name})")
-                    self._index_id = index.id
-                    return index.id
-            
-            # Create new index if it doesn't exist
-            logger.info(f"Creating new index: {index_name}")
-            index = self.client.indexes.create(
-                index_name=index_name,
-                models=[
-                    {
-                        "model_name": "marengo2.7",
-                        "model_options": ["visual", "audio"]
-                    },
-                    {
-                        "model_name": "pegasus1.2",
-                        "model_options": ["visual", "audio"]
-                    }
-                ]
-            )
-            self._index_id = index.id
-            logger.info(f"Created index: {index.id}")
-            return index.id
-            
-        except TooManyRequestsError as e:
-            logger.error("Rate limit exceeded while managing index")
-            raise RuntimeError("Rate limit exceeded while managing index") from e
-        except BadRequestError as e:
-            logger.error(f"API error while managing index: {str(e)}")
-            raise RuntimeError(f"Failed to manage index: {str(e)}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error while managing index: {str(e)}")
-            raise RuntimeError(f"Unexpected error while managing index: {str(e)}") from e
+    # ========== VIDEO UPLOAD ==========
     
-    def upload_and_index(
-        self,
-        video_path: str,
-        index_id: Optional[str] = None,
-        status_callback: Optional[callable] = None
-    ) -> str:
-        """
-        Upload a video file and wait for indexing to complete.
+    async def upload_video(self, video_path: str) -> Dict[str, Any]:
+        """Upload video file to TwelveLabs"""
+        if not Path(video_path).exists():
+            raise FileNotFoundError(f"Video not found: {video_path}")
         
-        Args:
-            video_path: Path to the local video file
-            index_id: Index ID to use (uses cached index_id if None)
-            status_callback: Optional callback function(status, progress) for status updates
-            
-        Returns:
-            video_id: The ID of the indexed video
-            
-        Raises:
-            FileNotFoundError: If video file doesn't exist
-            RuntimeError: If upload or indexing fails
-        """
-        # Ensure index exists
-        if index_id is None:
-            if self._index_id is None:
-                self.ensure_index_exists()
-            index_id = self._index_id
+        mime_types = {".mov": "video/quicktime", ".mp4": "video/mp4", 
+                      ".avi": "video/x-msvideo", ".webm": "video/webm"}
+        ext = Path(video_path).suffix.lower()
+        mime = mime_types.get(ext, "video/mp4")
         
-        if index_id is None:
-            raise RuntimeError("No index ID available")
-        
-        # Validate video file exists
-        video_file = Path(video_path)
-        if not video_file.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
-        
-        # Check file size
-        file_size = video_file.stat().st_size
-        logger.info(f"Video file size: {file_size} bytes")
-        
-        if file_size == 0:
-            raise RuntimeError("Video file is empty (0 bytes)")
-        
-        if file_size < 1000:
-            raise RuntimeError(f"Video file is too small ({file_size} bytes) - likely corrupted or invalid")
-        
-        try:
-            # Create upload task
-            logger.info(f"Uploading video: {video_path}")
+        with open(video_path, "rb") as f:
+            files = {
+                "index_id": (None, self.index_id),
+                "video_file": (Path(video_path).name, f, mime),
+            }
             
-            if status_callback:
-                status_callback("uploading", 0)
-            
-            # Read file and pass as bytes with filename
-            with open(video_file, "rb") as f:
-                file_content = f.read()
-            
-            logger.info(f"Read {len(file_content)} bytes from {video_path}")
-            
-            if len(file_content) == 0:
-                raise RuntimeError("Failed to read video file - content is empty")
-            
-            # Create task with video file content
-            task = self.client.tasks.create(
-                index_id=index_id,
-                video_file=(video_file.name, file_content)
-            )
-            
-            logger.info(f"Task created: {task.id}")
-            
-            if status_callback:
-                status_callback("indexing", 25)
-            
-            # Wait for task completion using the SDK's wait method
-            task_result = self.client.tasks.wait_for_done(
-                task_id=task.id,
-                sleep_interval=5
-            )
-            
-            # Check final status
-            if task_result.status != "ready":
-                error_msg = f"Task failed with status: {task_result.status}"
-                raise RuntimeError(error_msg)
-            
-            video_id = task_result.video_id
-            logger.info(f"Video indexed successfully: {video_id}")
-            
-            if status_callback:
-                status_callback("complete", 100)
-            
-            return video_id
-            
-        except TooManyRequestsError as e:
-            logger.error("Rate limit exceeded during video upload/indexing")
-            raise RuntimeError("Rate limit exceeded during video upload/indexing") from e
-        except BadRequestError as e:
-            logger.error(f"API error during video upload/indexing: {str(e)}")
-            raise RuntimeError(f"Failed to upload/index video: {str(e)}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error during video upload/indexing: {str(e)}")
-            raise RuntimeError(f"Unexpected error during video upload/indexing: {str(e)}") from e
+            async with httpx.AsyncClient() as client:
+                logger.info(f"Uploading: {video_path}")
+                response = await client.post(
+                    f"{self.base_url}/tasks",
+                    headers=self.headers,
+                    files=files,
+                    timeout=120.0
+                )
+                
+                if response.status_code not in [200, 201]:
+                    raise Exception(f"Upload failed: {response.text}")
+                
+                data = response.json()
+                logger.info(f"Upload success: task={data.get('_id')}, video={data.get('video_id')}")
+                return {"task_id": data.get("_id"), "video_id": data.get("video_id")}
     
-    def analyze_object(
-        self,
-        video_id: str,
-        object_id: str = "object_v1"
-    ) -> ObjectAnalysisResponse:
-        """
-        Analyze an object in a video with structured JSON output for LEGO reconstruction.
+    # ========== POLLING ==========
+    
+    async def wait_for_task(self, task_id: str, timeout: int = 300) -> Dict[str, Any]:
+        """Poll task until completed"""
+        url = f"{self.base_url}/tasks/{task_id}"
+        max_attempts = timeout // 3
         
-        Args:
-            video_id: ID of the video to analyze
-            object_id: Identifier for the object being analyzed
+        async with httpx.AsyncClient() as client:
+            for attempt in range(max_attempts):
+                response = await client.get(url, headers=self.headers, timeout=10.0)
+                
+                if response.status_code != 200:
+                    raise Exception(f"Task status failed: {response.text}")
+                
+                data = response.json()
+                status = data.get("status")
+                logger.info(f"Task {task_id}: {status} ({attempt + 1}/{max_attempts})")
+                
+                if status in ["completed", "ready"]:
+                    return data
+                elif status == "failed":
+                    raise Exception(f"Task failed: {data.get('error')}")
+                
+                await asyncio.sleep(3)
+        
+        raise TimeoutError(f"Task timed out after {timeout}s")
+    
+    async def wait_for_video_ready(self, video_id: str, timeout: int = 180) -> bool:
+        """Poll until video is ready for semantic analysis"""
+        max_attempts = timeout // 3
+        
+        for attempt in range(max_attempts):
+            logger.info(f"Checking video readiness ({attempt + 1}/{max_attempts})...")
             
-        Returns:
-            ObjectAnalysisResponse with voxel cloud, dimensions, and structural metadata
+            try:
+                if await self._verify_semantic_readiness(video_id):
+                    logger.info("Video ready for analysis")
+                    return True
+            except Exception as e:
+                # Propagate fatal errors (like unsupported index)
+                raise e
             
-        Raises:
-            RuntimeError: If analysis fails or rate limit exceeded
-        """
-        # Define JSON schema for structured response
-        json_schema: Dict[str, Any] = {
-            "type": "object",
-            "properties": {
-                "object_id": {"type": "string"},
-                "raw_vision_data": {
-                    "type": "object",
-                    "properties": {
-                        "estimated_dimensions_mm": {
-                            "type": "object",
-                            "properties": {
-                                "h": {"type": "number"},
-                                "w": {"type": "number"},
-                                "d": {"type": "number"}
-                            },
-                            "required": ["h", "w", "d"]
-                        },
-                        "voxel_cloud": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "point": {
-                                        "type": "array",
-                                        "items": {"type": "integer"}
-                                    },
-                                    "color_hex": {"type": "string"}
-                                },
-                                "required": ["point", "color_hex"]
-                            }
-                        },
-                        "confidence_score": {"type": "number"}
-                    },
-                    "required": ["estimated_dimensions_mm", "voxel_cloud", "confidence_score"]
-                },
-                "structural_metadata": {
-                    "type": "object",
-                    "properties": {
-                        "is_airy": {"type": "boolean"},
-                        "has_curves": {"type": "boolean"},
-                        "missing_surfaces": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    },
-                    "required": ["is_airy", "has_curves", "missing_surfaces"]
-                }
-            },
-            "required": ["object_id", "raw_vision_data", "structural_metadata"]
+            await asyncio.sleep(3)
+        
+        raise TimeoutError(f"Video not ready after {timeout}s")
+    
+    async def _verify_semantic_readiness(self, video_id: str) -> bool:
+        """Test if video is ready for semantic queries"""
+        payload = {
+            "video_id": video_id,
+            "prompt": "What is in this video?",
+            "temperature": 0.1,
+            "stream": False
         }
         
-        prompt = f"""Analyze the object in this video for LEGO brick reconstruction. Return a JSON object with:
-
-1. object_id: Use "{object_id}"
-
-2. raw_vision_data:
-   - estimated_dimensions_mm: Real-world dimensions in millimeters (h=height, w=width, d=depth)
-   - voxel_cloud: Array of voxel points representing the object's 3D shape. Each point has:
-     - point: [x, y, z] coordinates (integers, where each unit = ~8mm LEGO stud)
-     - color_hex: Dominant color at that point as hex code (e.g., "#CC0000")
-   - confidence_score: Your confidence in the analysis (0.0 to 1.0)
-
-3. structural_metadata:
-   - is_airy: true if object has sparse/open structures with gaps
-   - has_curves: true if object has curved surfaces
-   - missing_surfaces: List of surfaces that couldn't be analyzed (e.g., "bottom", "rear_left")
-
-Generate at least 10-20 voxel points to capture the object's shape. Return ONLY valid JSON."""
-        
-        try:
-            logger.info(f"Analyzing object in video {video_id}")
-            response = self.client.analyze(
-                video_id=video_id,
-                prompt=prompt,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": json_schema
-                }
-            )
-            
-            # Parse and validate response
-            if not hasattr(response, 'data') or not response.data:
-                raise RuntimeError("Empty response from analysis")
-            
-            # Parse JSON string to dict if needed
-            if isinstance(response.data, str):
-                data = json.loads(response.data)
-            else:
-                data = response.data
-            
-            logger.info(f"Raw TwelveLabs response: {json.dumps(data, indent=2)}")
-            
-            # Handle case where TwelveLabs returns old format or different structure
-            # Transform to our expected schema if needed
-            if 'raw_vision_data' not in data:
-                logger.warning("TwelveLabs returned unexpected format, transforming...")
-                # Try to extract from old format or create default structure
-                dims = data.get('dimensions_mm', data.get('estimated_dimensions_mm', {}))
-                colors = data.get('dominant_colors', [])
-                complexity = data.get('complexity', {})
-                
-                # Build voxel cloud from colors if not present
-                voxel_cloud = []
-                for i, color in enumerate(colors[:20] if colors else ['#808080']):
-                    voxel_cloud.append({
-                        "point": [i % 5, i // 5, 0],
-                        "color_hex": color if color.startswith('#') else f"#{color}"
-                    })
-                
-                data = {
-                    "object_id": object_id,
-                    "raw_vision_data": {
-                        "estimated_dimensions_mm": {
-                            "h": dims.get('h', dims.get('height', 50)),
-                            "w": dims.get('w', dims.get('width', 50)),
-                            "d": dims.get('d', dims.get('depth', 50))
-                        },
-                        "voxel_cloud": voxel_cloud,
-                        "confidence_score": data.get('confidence_score', 0.7)
-                    },
-                    "structural_metadata": {
-                        "is_airy": complexity.get('is_airy', False),
-                        "has_curves": complexity.get('has_curves', False),
-                        "missing_surfaces": complexity.get('missing_surfaces', data.get('missing_surfaces', []))
-                    }
-                }
-                logger.info(f"Transformed data: {json.dumps(data, indent=2)}")
-            
-            logger.info(f"Object analysis complete: {len(data.get('raw_vision_data', {}).get('voxel_cloud', []))} voxels")
-            
-            # Validate and create Pydantic model
+        async with httpx.AsyncClient() as client:
             try:
-                return ObjectAnalysisResponse(**data)
-            except Exception as validation_error:
-                logger.error(f"Pydantic validation failed: {validation_error}")
-                logger.error(f"Data that failed validation: {json.dumps(data, indent=2)}")
-                raise RuntimeError(f"Response validation failed: {validation_error}")
-            
-        except TooManyRequestsError as e:
-            logger.warning("Rate limit exceeded, retrying with exponential backoff...")
-            wait_time = 1
-            max_retries = 3
+                response = await client.post(
+                    f"{self.base_url}/analyze",
+                    headers={**self.headers, "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=30.0
+                )
+                
+                logger.info(f"Analyze response: {response.status_code} - {response.text[:200]}")
+                
+                if response.status_code == 200:
+                    return True
+                elif response.status_code == 400:
+                    error = response.json()
+                    code = error.get("code")
+                    logger.info(f"Analyze error code: {code}")
+                    if code == "video_not_ready":
+                        return False
+                    elif code == "index_not_supported_for_generate":
+                        # Index doesn't support analyze - fatal error
+                        raise Exception("Index doesn't support analyze. Create a new index with Pegasus enabled.")
+                return False
+            except Exception as e:
+                logger.error(f"Semantic check error: {e}")
+                raise
+    
+    # ========== ANALYSIS ==========
+    
+    async def analyze(self, video_id: str, prompt: str, max_retries: int = 10) -> str:
+        """Run analysis with retry logic for video_not_ready"""
+        url = f"{self.base_url}/analyze"
+        payload = {
+            "video_id": video_id,
+            "prompt": prompt,
+            "temperature": 0.2,
+            "stream": False
+        }
+        
+        retry_delay = 3
+        
+        async with httpx.AsyncClient() as client:
             for attempt in range(max_retries):
-                time.sleep(wait_time)
                 try:
-                    response = self.client.analyze(
-                        video_id=video_id,
-                        prompt=prompt,
-                        response_format={
-                            "type": "json_schema",
-                            "json_schema": json_schema
-                        }
+                    response = await client.post(
+                        url,
+                        headers={**self.headers, "Content-Type": "application/json"},
+                        json=payload,
+                        timeout=60.0
                     )
                     
-                    if isinstance(response.data, str):
-                        data = json.loads(response.data)
+                    if response.status_code == 200:
+                        data = response.json()
+                        return data.get("data", "")
+                    
+                    elif response.status_code == 400:
+                        error = response.json()
+                        if error.get("code") == "video_not_ready":
+                            logger.info(f"Video not ready, retry {attempt + 1}/{max_retries}...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay = min(retry_delay * 1.5, 30)
+                            continue
+                        else:
+                            raise Exception(f"Analysis failed: {response.text}")
                     else:
-                        data = response.data
-                    
-                    return ObjectAnalysisResponse(**data)
-                    
-                except TooManyRequestsError:
-                    wait_time *= 2
-                    if attempt == max_retries - 1:
-                        raise RuntimeError("Rate limit exceeded after retries") from e
+                        raise Exception(f"Analysis failed: {response.text}")
                         
-        except NotFoundError as e:
-            logger.error(f"Video ID {video_id} not found or not indexed")
-            raise RuntimeError(f"Video ID {video_id} not found or not indexed") from e
-        except BadRequestError as e:
-            logger.error(f"API error during analysis: {str(e)}")
-            raise RuntimeError(f"Analysis failed: {str(e)}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error during analysis: {str(e)}")
-            raise RuntimeError(f"Analysis failed: {str(e)}") from e
-
-    def analyze_scenery(
-        self,
-        video_id: str,
-        session_id: str = "session_01",
-        theme: str = "urban_park"
-    ) -> SceneryAnalysisResponse:
-        """
-        Analyze a scenery/environment video for LEGO world building.
+                except httpx.RequestError as e:
+                    if attempt == max_retries - 1:
+                        raise Exception(f"Network error: {e}")
+                    await asyncio.sleep(retry_delay)
         
-        Args:
-            video_id: ID of the video to analyze
-            session_id: Identifier for this analysis session
-            theme: Theme hint for the scenery (e.g., "urban_park", "city", "nature")
-            
-        Returns:
-            SceneryAnalysisResponse with world metadata, brick layers, and anchors
-            
-        Raises:
-            RuntimeError: If analysis fails or rate limit exceeded
-        """
-        json_schema: Dict[str, Any] = {
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string"},
-                "world_metadata": {
-                    "type": "object",
-                    "properties": {
-                        "grid_unit": {"type": "string"},
-                        "total_dimensions": {
-                            "type": "object",
-                            "properties": {
-                                "x": {"type": "integer"},
-                                "y": {"type": "integer"},
-                                "z": {"type": "integer"}
-                            },
-                            "required": ["x", "y", "z"]
-                        },
-                        "theme": {"type": "string"}
-                    },
-                    "required": ["grid_unit", "total_dimensions", "theme"]
-                },
-                "scenery_layers": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "layer_id": {"type": "string"},
-                            "bricks": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "part_id": {"type": "string"},
-                                        "color_id": {"type": "integer"},
-                                        "pos": {
-                                            "type": "array",
-                                            "items": {"type": "integer"}
-                                        },
-                                        "type": {"type": "string"}
-                                    },
-                                    "required": ["part_id", "color_id", "pos", "type"]
-                                }
-                            }
-                        },
-                        "required": ["layer_id", "bricks"]
-                    }
-                },
-                "anchors": {
-                    "type": "object",
-                    "properties": {
-                        "road_center": {
-                            "type": "array",
-                            "items": {"type": "integer"}
-                        },
-                        "flat_surface_zones": {
-                            "type": "array",
-                            "items": {
-                                "type": "array",
-                                "items": {"type": "integer"}
-                            }
-                        }
-                    },
-                    "required": ["road_center", "flat_surface_zones"]
-                }
-            },
-            "required": ["session_id", "world_metadata", "scenery_layers", "anchors"]
+        raise Exception(f"Analysis failed after {max_retries} attempts")
+    
+    async def get_object_description(self, video_id: str) -> str:
+        """Get detailed scene description for 3D reconstruction"""
+        prompt = """You are a 3D environment designer. Analyze this video and provide a detailed spatial description of the scene for generating a 3D model.
+
+Describe in detail:
+
+1. **ROOM/SPACE LAYOUT**
+   - Room shape and approximate dimensions (length x width x height in meters)
+   - Floor type and material (wood, tile, carpet, concrete)
+   - Wall colors and materials
+   - Ceiling type (flat, vaulted, exposed beams)
+
+2. **MAJOR OBJECTS & FURNITURE**
+   - List each object with position (front-left, center, back-right, etc.)
+   - Approximate size of each object (width x depth x height)
+   - Material and color (use hex codes like #FFFFFF)
+   - Shape description (rectangular, cylindrical, organic)
+
+3. **LIGHTING**
+   - Light sources (windows, lamps, overhead lights)
+   - Direction and intensity of light
+   - Shadows and ambient lighting
+
+4. **SPATIAL RELATIONSHIPS**
+   - How objects relate to each other (next to, behind, on top of)
+   - Distances between key objects
+   - Walkable areas and blocked spaces
+
+5. **TEXTURES & MATERIALS**
+   - Surface finishes (glossy, matte, rough, smooth)
+   - Patterns (striped, checkered, solid)
+   - Transparency (glass, translucent materials)
+
+Format your response so a 3D modeling AI (like Gemini) can recreate this scene using primitives (boxes, cylinders, planes) with accurate positions, scales, and materials.
+
+Be extremely specific with measurements, positions, and colors."""
+        
+        return await self.analyze(video_id, prompt)
+    
+    async def get_view_timestamp(self, video_id: str, view: str) -> Optional[str]:
+        """Get timestamp for a specific view (front, side, back, top)"""
+        prompts = {
+            "front": "Return the exact timestamp when the front view of the main object is best visible. Output only the timestamp in format (MM:SS)",
+            "side": "Return the exact timestamp when the side view of the main object is best visible. Output only the timestamp in format (MM:SS)",
+            "back": "Return the exact timestamp when the back view of the main object is best visible. Output only the timestamp in format (MM:SS)",
+            "top": "Return the exact timestamp when the top view of the main object is best visible. Output only the timestamp in format (MM:SS)",
         }
         
-        prompt = f"""Analyze this scenery/environment video for LEGO world building. Return a JSON object with:
-
-1. session_id: Use "{session_id}"
-
-2. world_metadata:
-   - grid_unit: "1x1_plate" (standard LEGO unit)
-   - total_dimensions: Estimated world size in grid units (x, y, z)
-   - theme: Use "{theme}" or suggest a more appropriate theme
-
-3. scenery_layers: Array of layers from bottom to top. Each layer has:
-   - layer_id: e.g., "baseplate_0", "ground_1", "structures_2"
-   - bricks: Array of brick placements with:
-     - part_id: LEGO part number (e.g., "3811" for baseplate, "3001" for 2x4 brick)
-     - color_id: LEGO color ID (2=green, 6=tan, 1=white, etc.)
-     - pos: [x, y, z] position in grid
-     - type: Descriptive type (e.g., "foundation", "grass_patch", "path", "wall")
-
-4. anchors: Key positions for object placement
-   - road_center: [x, y, z] center of any road/path
-   - flat_surface_zones: Array of [x, y, z] positions suitable for placing objects
-
-Create at least 2-3 layers with 5-10 bricks each. Return ONLY valid JSON."""
+        prompt = prompts.get(view, prompts["front"])
         
         try:
-            logger.info(f"Analyzing scenery in video {video_id}")
-            response = self.client.analyze(
-                video_id=video_id,
-                prompt=prompt,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": json_schema
-                }
-            )
-            
-            if not hasattr(response, 'data') or not response.data:
-                raise RuntimeError("Empty response from analysis")
-            
-            if isinstance(response.data, str):
-                data = json.loads(response.data)
-            else:
-                data = response.data
-            
-            logger.info(f"Scenery analysis complete: {len(data.get('scenery_layers', []))} layers")
-            
-            return SceneryAnalysisResponse(**data)
-            
-        except NotFoundError as e:
-            logger.error(f"Video ID {video_id} not found or not indexed")
-            raise RuntimeError(f"Video ID {video_id} not found or not indexed") from e
-        except BadRequestError as e:
-            logger.error(f"API error during scenery analysis: {str(e)}")
-            raise RuntimeError(f"Scenery analysis failed: {str(e)}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error during scenery analysis: {str(e)}")
-            raise RuntimeError(f"Scenery analysis failed: {str(e)}") from e
+            result = await self.analyze(video_id, prompt)
+            return result.strip()
+        except:
+            return None
+    
+    async def get_all_view_timestamps(self, video_id: str) -> Dict[str, Optional[str]]:
+        """Get timestamps for all views"""
+        views = ["front", "side", "back", "top"]
+        timestamps = {}
+        
+        for view in views:
+            logger.info(f"Getting {view} view timestamp...")
+            timestamps[view] = await self.get_view_timestamp(video_id, view)
+            await asyncio.sleep(0.5)  # Small delay between requests
+        
+        return timestamps
+
+
+# ========== Singleton ==========
+
+_api_instance = None
+
+def get_twelve_labs_api() -> TwelveLabsAPI:
+    global _api_instance
+    if _api_instance is None:
+        _api_instance = TwelveLabsAPI()
+    return _api_instance

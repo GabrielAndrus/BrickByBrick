@@ -12,14 +12,14 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             min-height: 100vh;
             color: #fff;
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 40px 20px;
         }
@@ -35,7 +35,6 @@
             background: linear-gradient(90deg, #f39c12, #e74c3c);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
         .subtitle {
@@ -49,33 +48,20 @@
             padding: 40px;
             border: 2px dashed #3d5a80;
             text-align: center;
-            transition: all 0.3s ease;
             cursor: pointer;
+            transition: all 0.3s ease;
         }
 
-        .upload-section:hover, .upload-section.drag-over {
+        .upload-section:hover {
             border-color: #f39c12;
             background: rgba(243, 156, 18, 0.1);
         }
 
-        .upload-icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-        }
+        .upload-icon { font-size: 4rem; margin-bottom: 20px; }
+        .upload-text { font-size: 1.2rem; margin-bottom: 10px; }
+        .upload-hint { color: #8892b0; }
 
-        .upload-text {
-            font-size: 1.2rem;
-            margin-bottom: 10px;
-        }
-
-        .upload-hint {
-            color: #8892b0;
-            font-size: 0.9rem;
-        }
-
-        #fileInput {
-            display: none;
-        }
+        #fileInput { display: none; }
 
         .btn {
             background: linear-gradient(90deg, #f39c12, #e74c3c);
@@ -85,13 +71,7 @@
             font-size: 1rem;
             border-radius: 8px;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
             margin-top: 20px;
-        }
-
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(243, 156, 18, 0.3);
         }
 
         .btn:disabled {
@@ -102,22 +82,13 @@
         .video-preview {
             margin-top: 30px;
             display: none;
+            text-align: center;
         }
 
         .video-preview video {
             max-width: 100%;
+            max-height: 300px;
             border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-
-        .file-info {
-            margin-top: 15px;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
 
         .progress-section {
@@ -130,7 +101,6 @@
             background: rgba(255, 255, 255, 0.1);
             border-radius: 4px;
             overflow: hidden;
-            margin-bottom: 15px;
         }
 
         .progress-fill {
@@ -142,7 +112,17 @@
 
         .status-text {
             color: #8892b0;
-            font-size: 0.95rem;
+            margin-top: 10px;
+        }
+
+        .error-message {
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid #e74c3c;
+            color: #e74c3c;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
         }
 
         .results-section {
@@ -150,106 +130,53 @@
             display: none;
         }
 
-        .results-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            padding: 30px;
+        .section-title {
+            font-size: 1.5rem;
             margin-bottom: 20px;
-        }
-
-        .results-card h3 {
             color: #f39c12;
-            margin-bottom: 20px;
-            font-size: 1.3rem;
         }
 
-        .result-grid {
+        /* Frames Grid */
+        .frames-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
         }
 
-        .result-item {
-            background: rgba(255, 255, 255, 0.03);
-            padding: 20px;
+        .frame-card {
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
+            overflow: hidden;
         }
 
-        .result-item label {
-            display: block;
+        .frame-card img {
+            width: 100%;
+            height: 280px;
+            object-fit: contain;
+            background: #000;
+        }
+
+        .frame-info {
+            padding: 12px;
+        }
+
+        .frame-angle {
+            font-weight: bold;
+            color: #f39c12;
+            text-transform: capitalize;
+        }
+
+        .frame-time {
             color: #8892b0;
             font-size: 0.85rem;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
 
-        .result-item .value {
-            font-size: 1.4rem;
-            font-weight: 600;
-        }
-
-        .colors-display {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-
-        .color-swatch {
-            width: 50px;
-            height: 50px;
-            border-radius: 8px;
-            border: 3px solid rgba(255, 255, 255, 0.2);
-            position: relative;
-            cursor: pointer;
-        }
-
-        .color-swatch:hover::after {
-            content: attr(data-color);
-            position: absolute;
-            bottom: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.75rem;
-            color: #8892b0;
-            white-space: nowrap;
-        }
-
-        .complexity-flags {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-
-        .flag {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 16px;
+        /* JSON Output */
+        .json-section {
             background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px;
-            font-size: 0.9rem;
-        }
-
-        .flag.active {
-            background: rgba(46, 204, 113, 0.2);
-            color: #2ecc71;
-        }
-
-        .flag.inactive {
-            background: rgba(231, 76, 60, 0.1);
-            color: #e74c3c;
-        }
-
-        .error-message {
-            background: rgba(231, 76, 60, 0.2);
-            border: 1px solid #e74c3c;
-            color: #e74c3c;
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-top: 20px;
-            display: none;
+            border-radius: 12px;
+            padding: 20px;
         }
 
         .json-output {
@@ -260,19 +187,8 @@
             font-family: 'Monaco', 'Consolas', monospace;
             font-size: 0.85rem;
             line-height: 1.6;
-            margin-top: 15px;
-        }
-
-        @media (max-width: 600px) {
-            h1 {
-                font-size: 1.8rem;
-            }
-            .upload-section {
-                padding: 25px;
-            }
-            .results-card {
-                padding: 20px;
-            }
+            max-height: 500px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -280,7 +196,7 @@
     <div class="container">
         <header>
             <h1>🧱 Reality to Brick</h1>
-            <p class="subtitle">Upload a video to extract object dimensions, colors, and complexity</p>
+            <p class="subtitle">Upload a video to extract images from different angles + JSON data</p>
         </header>
 
         <div class="upload-section" id="dropZone">
@@ -292,10 +208,7 @@
 
         <div class="video-preview" id="videoPreview">
             <video id="previewVideo" controls></video>
-            <div class="file-info">
-                <span id="fileName"></span>
-                <span id="fileSize"></span>
-            </div>
+            <br>
             <button class="btn" id="analyzeBtn">🚀 Analyze Video</button>
         </div>
 
@@ -303,42 +216,17 @@
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
-            <p class="status-text" id="statusText">Uploading video...</p>
+            <p class="status-text" id="statusText">Processing...</p>
         </div>
 
         <div class="error-message" id="errorMessage"></div>
 
         <div class="results-section" id="resultsSection">
-            <div class="results-card">
-                <h3>📐 Dimensions (mm)</h3>
-                <div class="result-grid">
-                    <div class="result-item">
-                        <label>Height</label>
-                        <div class="value" id="dimHeight">-</div>
-                    </div>
-                    <div class="result-item">
-                        <label>Width</label>
-                        <div class="value" id="dimWidth">-</div>
-                    </div>
-                    <div class="result-item">
-                        <label>Depth</label>
-                        <div class="value" id="dimDepth">-</div>
-                    </div>
-                </div>
-            </div>
+            <h2 class="section-title">📸 Extracted Frames (Different Angles)</h2>
+            <div class="frames-grid" id="framesGrid"></div>
 
-            <div class="results-card">
-                <h3>🎨 Dominant Colors</h3>
-                <div class="colors-display" id="colorsDisplay"></div>
-            </div>
-
-            <div class="results-card">
-                <h3>🧩 Complexity Analysis</h3>
-                <div class="complexity-flags" id="complexityFlags"></div>
-            </div>
-
-            <div class="results-card">
-                <h3>📄 Raw JSON Response</h3>
+            <h2 class="section-title">📄 TwelveLabs JSON Data</h2>
+            <div class="json-section">
                 <pre class="json-output" id="jsonOutput"></pre>
             </div>
         </div>
@@ -355,60 +243,30 @@
         const statusText = document.getElementById('statusText');
         const resultsSection = document.getElementById('resultsSection');
         const errorMessage = document.getElementById('errorMessage');
+        const framesGrid = document.getElementById('framesGrid');
+        const jsonOutput = document.getElementById('jsonOutput');
 
         let selectedFile = null;
 
-        // Drag and drop handlers
+        // Drag and drop
         dropZone.addEventListener('click', () => fileInput.click());
-        
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('drag-over');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('drag-over');
-        });
-
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#f39c12'; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#3d5a80'; });
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFile(files[0]);
-            }
+            dropZone.style.borderColor = '#3d5a80';
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
         });
-
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFile(e.target.files[0]);
-            }
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
         });
 
         function handleFile(file) {
-            // Validate file type
-            const allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
-            if (!allowedTypes.includes(file.type)) {
-                showError('Invalid file type. Please upload MP4, MOV, AVI, or WebM.');
-                return;
-            }
-
             selectedFile = file;
-            hideError();
-
-            // Show preview
-            const url = URL.createObjectURL(file);
-            previewVideo.src = url;
-            document.getElementById('fileName').textContent = file.name;
-            document.getElementById('fileSize').textContent = formatFileSize(file.size);
+            errorMessage.style.display = 'none';
+            previewVideo.src = URL.createObjectURL(file);
             videoPreview.style.display = 'block';
             resultsSection.style.display = 'none';
-        }
-
-        function formatFileSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
         analyzeBtn.addEventListener('click', async () => {
@@ -417,61 +275,46 @@
             analyzeBtn.disabled = true;
             progressSection.style.display = 'block';
             resultsSection.style.display = 'none';
-            hideError();
-
-            // Simulate progress for upload
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                if (progress < 30) {
-                    progress += 2;
-                    progressFill.style.width = progress + '%';
-                }
-            }, 100);
+            errorMessage.style.display = 'none';
+            progressFill.style.width = '10%';
+            statusText.textContent = 'Uploading video...';
 
             try {
-                statusText.textContent = 'Uploading video...';
-                
                 const formData = new FormData();
                 formData.append('file', selectedFile);
 
-                // Update progress for indexing phase
-                setTimeout(() => {
-                    if (progress < 60) {
-                        statusText.textContent = 'Indexing video with TwelveLabs...';
-                        progress = 40;
+                // Progress simulation
+                let progress = 10;
+                const interval = setInterval(() => {
+                    if (progress < 90) {
+                        progress += 5;
                         progressFill.style.width = progress + '%';
+                        if (progress > 30) statusText.textContent = 'Processing with TwelveLabs...';
+                        if (progress > 60) statusText.textContent = 'Extracting frames...';
                     }
-                }, 2000);
+                }, 1000);
 
-                setTimeout(() => {
-                    if (progress < 80) {
-                        statusText.textContent = 'Analyzing object properties...';
-                        progress = 70;
-                        progressFill.style.width = progress + '%';
-                    }
-                }, 5000);
-
-                const response = await fetch('/api/process-video', {
+                const response = await fetch('/api/process-video-with-frames', {
                     method: 'POST',
                     body: formData
                 });
 
-                clearInterval(progressInterval);
+                clearInterval(interval);
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Failed to process video');
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to process video');
                 }
 
                 progressFill.style.width = '100%';
-                statusText.textContent = 'Analysis complete!';
+                statusText.textContent = 'Done!';
 
                 const data = await response.json();
                 displayResults(data);
 
             } catch (error) {
-                clearInterval(progressInterval);
-                showError(error.message);
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
                 progressSection.style.display = 'none';
             } finally {
                 analyzeBtn.disabled = false;
@@ -479,89 +322,37 @@
         });
 
         function displayResults(data) {
-            const analysis = data.analysis;
+            // Display frames
+            framesGrid.innerHTML = '';
+            const frames = data.frames?.images || [];
             
-            // Log for debugging
-            console.log('Analysis data:', analysis);
-
-            // Display dimensions with fallbacks
-            const rawVision = analysis.raw_vision_data || {};
-            const dims = rawVision.estimated_dimensions_mm || {};
-            document.getElementById('dimHeight').textContent = (dims.h || dims.height || 0).toFixed(1);
-            document.getElementById('dimWidth').textContent = (dims.w || dims.width || 0).toFixed(1);
-            document.getElementById('dimDepth').textContent = (dims.d || dims.depth || 0).toFixed(1);
-
-            // Display colors (extract unique colors from voxel_cloud)
-            const colorsDisplay = document.getElementById('colorsDisplay');
-            colorsDisplay.innerHTML = '';
-            const voxelCloud = rawVision.voxel_cloud || [];
-            const uniqueColors = [...new Set(voxelCloud.map(v => v.color_hex).filter(Boolean))];
-            
-            if (uniqueColors.length === 0) {
-                colorsDisplay.innerHTML = '<span style="color: #8892b0;">No colors detected</span>';
+            if (frames.length === 0) {
+                framesGrid.innerHTML = '<p style="color: #8892b0;">No frames extracted</p>';
             } else {
-                uniqueColors.forEach(color => {
-                    const swatch = document.createElement('div');
-                    swatch.className = 'color-swatch';
-                    swatch.style.backgroundColor = color;
-                    swatch.setAttribute('data-color', color);
-                    swatch.title = color;
-                    colorsDisplay.appendChild(swatch);
+                frames.forEach((frame, i) => {
+                    const card = document.createElement('div');
+                    card.className = 'frame-card';
+                    card.innerHTML = `
+                        <img src="${frame.image_base64}" alt="Frame ${i + 1}">
+                        <div class="frame-info">
+                            <div class="frame-angle">${frame.angle || frame.angle_estimate || 'Angle ' + (i + 1)}</div>
+                            <div class="frame-time">${frame.timestamp_sec}s</div>
+                        </div>
+                    `;
+                    framesGrid.appendChild(card);
                 });
             }
 
-            // Display complexity flags (new schema: structural_metadata)
-            const complexityFlags = document.getElementById('complexityFlags');
-            complexityFlags.innerHTML = '';
-            
-            const metadata = analysis.structural_metadata || {};
-            const flags = [
-                { key: 'is_airy', label: 'Airy Structure', icon: '💨' },
-                { key: 'has_curves', label: 'Has Curves', icon: '🌀' }
-            ];
-
-            flags.forEach(flag => {
-                const value = metadata[flag.key];
-                const div = document.createElement('div');
-                div.className = `flag ${value ? 'active' : 'inactive'}`;
-                div.innerHTML = `${flag.icon} ${flag.label}: ${value ? 'Yes' : 'No'}`;
-                complexityFlags.appendChild(div);
-            });
-
-            // Display missing surfaces
-            if (metadata.missing_surfaces && metadata.missing_surfaces.length > 0) {
-                const div = document.createElement('div');
-                div.className = 'flag inactive';
-                div.innerHTML = `🔍 Missing Surfaces: ${metadata.missing_surfaces.join(', ')}`;
-                complexityFlags.appendChild(div);
-            }
-
-            // Display confidence score
-            const confidence = rawVision.confidence_score || 0;
-            const confidenceDiv = document.createElement('div');
-            confidenceDiv.className = `flag ${confidence > 0.7 ? 'active' : 'inactive'}`;
-            confidenceDiv.innerHTML = `📊 Confidence: ${(confidence * 100).toFixed(0)}%`;
-            complexityFlags.appendChild(confidenceDiv);
-
-            // Display voxel count
-            const voxelDiv = document.createElement('div');
-            voxelDiv.className = 'flag active';
-            voxelDiv.innerHTML = `🧱 Voxels: ${voxelCloud.length}`;
-            complexityFlags.appendChild(voxelDiv);
-
-            // Display raw JSON
-            document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+            // Display JSON (analysis data only, not the base64 images)
+            const jsonData = {
+                video_id: data.video_id,
+                angle_detection: data.angle_detection,
+                analysis: data.analysis
+            };
+            jsonOutput.textContent = JSON.stringify(jsonData, null, 2);
 
             resultsSection.style.display = 'block';
-        }
-
-        function showError(message) {
-            errorMessage.textContent = message;
-            errorMessage.style.display = 'block';
-        }
-
-        function hideError() {
-            errorMessage.style.display = 'none';
+            progressSection.style.display = 'none';
         }
     </script>
 </body>

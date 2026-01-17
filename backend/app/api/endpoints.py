@@ -1,220 +1,151 @@
+"""
+API Endpoints for Reality-to-Brick
+"""
+
 import os
 import tempfile
 import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 
-from app.services.twelve_labs import TwelveLabsService
-from app.models.schemas import ObjectAnalysisResponse, SceneryAnalysisResponse
+from app.services.twelve_labs import get_twelve_labs_api
+from app.services.ffmpeg_processor import get_ffmpeg_processor
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Global service instance (initialized lazily)
-_twelve_labs_service: TwelveLabsService | None = None
-
-
-def get_twelve_labs_service() -> TwelveLabsService:
-    """Get or create the TwelveLabs service instance."""
-    global _twelve_labs_service
-    if _twelve_labs_service is None:
-        _twelve_labs_service = TwelveLabsService()
-    return _twelve_labs_service
-
 
 @router.get("/test")
 async def test_endpoint():
-    """Test endpoint"""
-    return {"message": "API endpoints are working"}
+    return {"status": "ok", "message": "API is running"}
 
 
-@router.post("/upload-video", response_model=dict)
-async def upload_video(file: UploadFile = File(...)):
+@router.post("/process-video")
+async def process_video(file: UploadFile = File(...), num_frames: int = 6):
     """
-    Upload a video file and index it with TwelveLabs.
+    Main endpoint: Upload video, extract frames, get TwelveLabs analysis.
     
-    Returns the video_id for subsequent analysis.
+    Returns:
+    - Extracted frames (base64 images)
+    - Object description from TwelveLabs
+    - View timestamps (front, side, back, top)
     """
-    # Validate file type
-    allowed_types = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
-        )
+    allowed = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
+    if file.content_type not in allowed:
+        raise HTTPException(400, f"Invalid type. Allowed: {allowed}")
     
+    tmp_path = None
     try:
-        service = get_twelve_labs_service()
+        content = await file.read()
+        logger.info(f"Processing: {file.filename}, {len(content)} bytes")
         
-        # Save uploaded file to temp location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        if len(content) < 1000:
+            raise HTTPException(400, "File too small")
+        
+        ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=ext or ".mp4")
+        os.write(tmp_fd, content)
+        os.close(tmp_fd)
+        
+        # Step 1: Extract frames with FFmpeg
+        logger.info("Step 1: Extracting frames...")
+        ffmpeg = get_ffmpeg_processor()
+        frames_result = ffmpeg.extract_frames(tmp_path, num_frames=num_frames)
+        frames = frames_result.get("images", [])
+        logger.info(f"Extracted {len(frames)} frames")
+        
+        # Step 2: Upload to TwelveLabs
+        logger.info("Step 2: Uploading to TwelveLabs...")
+        api = get_twelve_labs_api()
+        
+        video_id = None
+        description = None
+        timestamps = None
         
         try:
-            # Ensure index exists and upload video
-            service.ensure_index_exists()
-            video_id = service.upload_and_index(tmp_path)
+            upload = await api.upload_video(tmp_path)
+            video_id = upload.get("video_id")
+            task_id = upload.get("task_id")
             
-            return {
-                "status": "success",
-                "video_id": video_id,
-                "message": "Video uploaded and indexed successfully"
+            # Wait for task completion
+            logger.info("Waiting for indexing...")
+            await api.wait_for_task(task_id, timeout=120)
+            
+            # Wait for video to be ready for analysis
+            logger.info("Waiting for video ready...")
+            await api.wait_for_video_ready(video_id, timeout=120)
+            
+            # Step 3: Get object description
+            logger.info("Step 3: Getting object description...")
+            description = await api.get_object_description(video_id)
+            
+            # Step 4: Get view timestamps
+            logger.info("Step 4: Getting view timestamps...")
+            timestamps = await api.get_all_view_timestamps(video_id)
+            
+        except Exception as e:
+            logger.error(f"TwelveLabs error: {e}")
+            description = f"Error: {e}"
+            timestamps = {"error": str(e)}
+        
+        return {
+            "status": "success",
+            "video_id": video_id,
+            "frames": {
+                "count": len(frames),
+                "video_duration": frames_result.get("video_duration"),
+                "images": frames
+            },
+            "analysis": {
+                "description": description,
+                "timestamps": timestamps
             }
-        finally:
-            # Clean up temp file
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-                
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error uploading video: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process video")
-
-
-@router.post("/analyze/{video_id}", response_model=ObjectAnalysisResponse)
-async def analyze_video(video_id: str):
-    """
-    Analyze an indexed video to extract object dimensions, colors, and complexity.
-    """
-    try:
-        service = get_twelve_labs_service()
-        result = service.analyze_object(video_id)
-        return result
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error analyzing video: {e}")
-        raise HTTPException(status_code=500, detail="Failed to analyze video")
-
-
-@router.post("/process-video", response_model=dict)
-async def process_video(file: UploadFile = File(...)):
-    """
-    Full pipeline: Upload, index, and analyze a video in one request.
-    
-    Returns the complete analysis results.
-    """
-    # Validate file type
-    allowed_types = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
-        )
-    
-    tmp_path = None
-    try:
-        service = get_twelve_labs_service()
-        
-        # Save uploaded file to temp location
-        content = await file.read()
-        
-        # Log file size for debugging
-        logger.info(f"Received video file: {file.filename}, size: {len(content)} bytes, type: {file.content_type}")
-        
-        if len(content) < 1000:
-            raise HTTPException(status_code=400, detail="Video file is too small or empty")
-        
-        # Get original extension from filename
-        original_ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
-        if not original_ext:
-            original_ext = ".mp4"
-            
-        # Create temp file with proper extension
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=original_ext)
-        try:
-            os.write(tmp_fd, content)
-        finally:
-            os.close(tmp_fd)
-        
-        logger.info(f"Saved temp file: {tmp_path}, size on disk: {os.path.getsize(tmp_path)} bytes")
-        
-        # Full pipeline
-        service.ensure_index_exists()
-        video_id = service.upload_and_index(tmp_path)
-        analysis = service.analyze_object(video_id)
-        
-        return {
-            "status": "success",
-            "video_id": video_id,
-            "analysis": analysis.model_dump()
         }
-                
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error processing video: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process video")
+        logger.error(f"Error: {e}")
+        raise HTTPException(500, str(e))
     finally:
-        # Clean up temp file
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
 
-@router.post("/process-scenery", response_model=dict)
-async def process_scenery(file: UploadFile = File(...), theme: str = "urban_park"):
-    """
-    Process a scenery video: Upload, index, and analyze for LEGO world building.
-    
-    Returns scenery analysis with world metadata, brick layers, and anchors.
-    """
-    allowed_types = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
-        )
+@router.post("/extract-frames")
+async def extract_frames(file: UploadFile = File(...), num_frames: int = 6):
+    """Extract frames only (no TwelveLabs)"""
+    allowed = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
+    if file.content_type not in allowed:
+        raise HTTPException(400, f"Invalid type. Allowed: {allowed}")
     
     tmp_path = None
     try:
-        service = get_twelve_labs_service()
-        
         content = await file.read()
-        logger.info(f"Received scenery video: {file.filename}, size: {len(content)} bytes")
-        
         if len(content) < 1000:
-            raise HTTPException(status_code=400, detail="Video file is too small or empty")
+            raise HTTPException(400, "File too small")
         
-        original_ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
-        if not original_ext:
-            original_ext = ".mp4"
-            
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=original_ext)
-        try:
-            os.write(tmp_fd, content)
-        finally:
-            os.close(tmp_fd)
+        ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=ext or ".mp4")
+        os.write(tmp_fd, content)
+        os.close(tmp_fd)
         
-        logger.info(f"Saved temp file: {tmp_path}, size on disk: {os.path.getsize(tmp_path)} bytes")
-        
-        service.ensure_index_exists()
-        video_id = service.upload_and_index(tmp_path)
-        analysis = service.analyze_scenery(video_id, theme=theme)
+        ffmpeg = get_ffmpeg_processor()
+        result = ffmpeg.extract_frames(tmp_path, num_frames=num_frames)
         
         return {
             "status": "success",
-            "video_id": video_id,
-            "analysis": analysis.model_dump()
+            "num_frames": len(result.get("images", [])),
+            "video_duration": result.get("video_duration"),
+            "frames": result.get("images", [])
         }
-                
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error processing scenery: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process scenery")
+        
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# Backwards compatibility
+@router.post("/process-video-with-frames")
+async def process_video_with_frames(file: UploadFile = File(...), num_frames: int = 6):
+    """Alias for /process-video"""
+    return await process_video(file, num_frames)

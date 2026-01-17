@@ -6,3 +6,4 @@ httpx
 twelvelabs
 google-generativeai
 python-multipart
+opencv-python
