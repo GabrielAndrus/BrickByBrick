@@ -195,7 +195,7 @@ class TwelveLabsService:
         if index_id is None:
             raise RuntimeError("No index ID available")
         
-        # Define JSON schema for structured response
+        # Define JSON schema for structured response with Three.js mesh
         json_schema: Dict[str, Any] = {
             "type": "object",
             "properties": {
@@ -223,17 +223,70 @@ class TwelveLabsService:
                         "has_floating_parts": {"type": "boolean"}
                     },
                     "required": ["is_airy", "has_curves", "has_floating_parts"]
+                },
+                "threejs_mesh": {
+                    "type": "object",
+                    "properties": {
+                        "vertices": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 3,
+                                "maxItems": 3
+                            },
+                            "description": "List of vertex positions [x, y, z] in millimeters"
+                        },
+                        "faces": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                                "minItems": 3,
+                                "maxItems": 3
+                            },
+                            "description": "List of triangular faces as vertex indices [i, j, k]"
+                        },
+                        "normals": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 3,
+                                "maxItems": 3
+                            },
+                            "description": "Optional vertex normals [nx, ny, nz]"
+                        },
+                        "colors": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "pattern": "^#[0-9A-Fa-f]{6}$"
+                            },
+                            "description": "Optional vertex colors (hex codes)"
+                        }
+                    },
+                    "required": ["vertices", "faces"]
                 }
             },
-            "required": ["dimensions_mm", "dominant_colors", "complexity"]
+            "required": ["dimensions_mm", "dominant_colors", "complexity", "threejs_mesh"]
         }
         
         prompt = (
-            "Estimate the real-world scale of the object in millimeters and analyze "
-            "its structural connectivity for a brick-based reconstruction. "
-            "Extract the height, width, and depth in millimeters, identify the dominant "
-            "colors as hex codes, and assess complexity features: airiness (sparse/open structures), "
-            "curviness (curved surfaces), and floating parts (unconnected components)."
+            "Analyze this object and provide a complete Three.js-compatible mesh representation. "
+            "Estimate the real-world scale in millimeters and create a 3D mesh model.\n\n"
+            "Requirements:\n"
+            "1. Extract dimensions: height, width, depth in millimeters\n"
+            "2. Identify dominant colors as hex codes\n"
+            "3. Assess complexity: airiness, curviness, floating parts\n"
+            "4. **CRITICAL**: Generate a Three.js-compatible JSON mesh with:\n"
+            "   - vertices: Array of [x, y, z] coordinates in millimeters\n"
+            "   - faces: Array of [i, j, k] triangular face indices (referencing vertex indices)\n"
+            "   - normals: Optional vertex normals [nx, ny, nz] for proper lighting\n"
+            "   - colors: Optional vertex colors (hex codes) matching dominant_colors\n\n"
+            "The mesh should accurately represent the object's 3D geometry as seen in the video. "
+            "Use triangular faces only. Ensure vertices form a closed, watertight mesh suitable "
+            "for voxelization and LEGO brick conversion."
         )
         
         try:

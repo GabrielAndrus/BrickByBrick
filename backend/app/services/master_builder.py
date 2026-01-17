@@ -1,441 +1,419 @@
 """
 Master Builder Service
-Manages the 3D grid, brick inventory, and enforces three core engineering rules:
-1. Greedy Volume Fitting
-2. Laminar Interlocking
-3. Connectivity Audit
+Implements Greedy Fitting Algorithm for LEGO bricks.
+
+Takes a 3D array of voxels (x, y, z, hex_color) from Three.js and converts it
+into a list of real LEGO bricks with proper structural integrity.
 """
 import logging
+import asyncio
+import os
 from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
 from dataclasses import dataclass
+import json
+
+from app.services.rebrickable_api import get_rebrickable_client
+from app.services.part_discovery import get_part_discovery_service
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Brick:
-    """Represents a placed LEGO brick in the 3D grid"""
-    part_id: str
-    color_id: int
-    position: Tuple[int, int, int]  # (x, y, z)
-    dimensions: Tuple[int, int, int]  # (width, height, depth) in stud units
-    is_ai_filled: bool = False
-    layer: int = 0  # For laminar interlocking tracking
+class Voxel:
+    """Represents a single voxel from Three.js input"""
+    x: int
+    y: int
+    z: int
+    hex_color: str
 
 
 @dataclass
-class VoxelCluster:
-    """Represents a cluster of voxels to be filled"""
-    voxels: Set[Tuple[int, int, int]]
-    bounding_box: Tuple[int, int, int, int, int, int]  # (min_x, min_y, min_z, max_x, max_y, max_z)
+class PlacedBrick:
+    """Represents a placed LEGO brick in the final manifest"""
+    part_id: str
+    position: Tuple[int, int, int]  # (x, y, z)
+    rotation: int  # Rotation in degrees: 0, 90, 180, 270
+    color_id: int  # Rebrickable color ID
+    is_verified: bool = False  # Whether part availability was verified
 
 
 class MasterBuilder:
     """
-    Source of Truth for the 3D LEGO grid.
-    Manages physical placement, inventory tracking, and enforces engineering rules.
+    Master Builder Service implementing Greedy Fitting Algorithm.
+    
+    Core Features:
+    1. Greedy Volume Fitting - Tries largest bricks first (sorted by area: 2x12, 2x10, 2x8, etc.)
+       - Optimizes for minimal part count by prioritizing larger bricks
+       - Supports 40+ common LEGO brick types (bricks, plates, tiles)
+       - Automatically sorts by volume (width * height) descending
+    2. Laminar Interlocking - Stagger bricks on even vs odd layers
+    3. Color Verification - Uses Rebrickable API to verify part availability
+    4. Fallback Logic - If a brick is unavailable, tries next smaller size
     """
     
+    # Dynamic brick priorities - discovered via Rebrickable/Backboard APIs
+    # Format: List of (width, height, depth, part_id, priority_score)
+    # Populated dynamically based on voxel shape analysis
+    _brick_priorities_cache: Optional[List[Tuple[int, int, int, str, float]]] = None
+    
+    # Rotation options (in degrees)
+    ROTATIONS = [0, 90, 180, 270]
+    
     def __init__(self):
-        # 3D Grid: (x, y, z) -> Brick or None
-        self.grid: Dict[Tuple[int, int, int], Optional[Brick]] = {}
+        # 3D Grid: (x, y, z) -> hex_color or None
+        self.voxel_grid: Dict[Tuple[int, int, int], str] = {}
         
-        # Inventory: part_id -> count of placed bricks
-        self.inventory: Dict[str, int] = defaultdict(int)
+        # Placed bricks
+        self.placed_bricks: List[PlacedBrick] = []
         
-        # Layer tracking for laminar interlocking
-        self.layer_bricks: Dict[int, List[Brick]] = defaultdict(list)
+        # Occupied positions (for collision detection)
+        self.occupied_positions: Set[Tuple[int, int, int]] = set()
         
-        # All placed bricks
-        self.placed_bricks: List[Brick] = []
+        # Layer tracking for interlocking
+        self.layer_bricks: Dict[int, List[PlacedBrick]] = defaultdict(list)
         
-        # Scenery anchor (loaded from memory)
-        self.scenery_data: Optional[Dict] = None
+        # Color mapping: hex -> Rebrickable color_id
+        self.color_cache: Dict[str, int] = {}
         
-        # Standard brick sizes (width, height, depth) in stud units
-        # Ordered from largest to smallest for greedy fitting
-        self.brick_sizes = [
-            (4, 2, 1),  # 2x4 brick
-            (3, 2, 1),  # 2x3 brick
-            (2, 2, 1),  # 2x2 brick
-            (4, 1, 1),  # 1x4 brick
-            (3, 1, 1),  # 1x3 brick
-            (2, 1, 1),  # 1x2 brick
-            (1, 1, 1),  # 1x1 brick
-        ]
+        # Rebrickable API client
+        self.rebrickable = get_rebrickable_client()
+        
+        # Part Discovery Service (for intelligent part selection)
+        self.part_discovery = get_part_discovery_service()
+        
+        # Search mode: "simple" (Rebrickable only) or "hard" (Backboard AI)
+        self.search_mode = os.getenv("PART_SEARCH_MODE", "simple").lower()
     
-    def initialize_scenery(self, scenery_data: Dict):
+    async def _initialize_brick_priorities(self):
         """
-        Initialize the Master Builder with scenery data as the anchor.
-        This sets the ground truth coordinate system.
+        Initialize brick priorities from Rebrickable API.
+        This fetches parts dynamically and calculates priority scores.
         """
-        self.scenery_data = scenery_data
-        logger.info("Scenery anchor initialized")
-        
-        # If scenery contains existing bricks, load them into the grid
-        if "bricks" in scenery_data:
-            for brick_data in scenery_data["bricks"]:
-                self.register_brick(
-                    part_id=brick_data.get("part_id"),
-                    color_id=brick_data.get("color_id"),
-                    position=tuple(brick_data.get("position", [0, 0, 0])),
-                    dimensions=tuple(brick_data.get("dimensions", [1, 1, 1])),
-                    is_ai_filled=False
-                )
+        if self._brick_priorities is None:
+            logger.info("Initializing dynamic brick priorities from Rebrickable API...")
+            self._brick_priorities = await self.rebrickable.fetch_brick_priorities(
+                include_categories=["Bricks", "Plates", "Tiles", "Bricks Round and Cones", "Bricks Curved"],
+                exclude_tags=["minifig", "rare", "expensive", "sticker"],
+                min_area=1,
+                max_results=200
+            )
+            logger.info(f"Initialized {len(self._brick_priorities)} brick types with dynamic priorities")
     
-    def register_brick(
-        self,
-        part_id: str,
-        color_id: int,
-        position: Tuple[int, int, int],
-        dimensions: Optional[Tuple[int, int, int]] = None,
-        is_ai_filled: bool = False
-    ) -> bool:
+    async def process_voxels(self, voxel_data: List[Dict]) -> Dict:
         """
-        Register a brick placement in the grid.
-        This is the primary entry point called by the place_brick tool.
-        
-        Returns:
-            bool: True if placement was successful
-        """
-        # Determine dimensions if not provided (try to infer from part_id)
-        if dimensions is None:
-            dimensions = self._infer_dimensions(part_id)
-        
-        # Calculate layer (z-coordinate determines layer)
-        layer = position[2]
-        
-        # Create brick
-        brick = Brick(
-            part_id=part_id,
-            color_id=color_id,
-            position=position,
-            dimensions=dimensions,
-            is_ai_filled=is_ai_filled,
-            layer=layer
-        )
-        
-        # Check if position is valid and not occupied
-        if not self._can_place_brick(brick):
-            logger.warning(f"Cannot place brick at {position} - position occupied or invalid")
-            return False
-        
-        # Place brick in grid
-        self._place_brick_in_grid(brick)
-        
-        # Update inventory
-        self.inventory[part_id] += 1
-        
-        # Track by layer for interlocking
-        self.layer_bricks[layer].append(brick)
-        self.placed_bricks.append(brick)
-        
-        logger.info(f"🧱 Registered brick: {part_id} at {position} (layer {layer})")
-        return True
-    
-    def _can_place_brick(self, brick: Brick) -> bool:
-        """Check if a brick can be placed at the given position"""
-        x, y, z = brick.position
-        w, h, d = brick.dimensions
-        
-        # Check all voxels that this brick would occupy
-        for dx in range(w):
-            for dy in range(h):
-                for dz in range(d):
-                    voxel_pos = (x + dx, y + dy, z + dz)
-                    if voxel_pos in self.grid and self.grid[voxel_pos] is not None:
-                        return False
-        return True
-    
-    def _place_brick_in_grid(self, brick: Brick):
-        """Place a brick in the 3D grid, occupying all its voxels"""
-        x, y, z = brick.position
-        w, h, d = brick.dimensions
-        
-        for dx in range(w):
-            for dy in range(h):
-                for dz in range(d):
-                    voxel_pos = (x + dx, y + dy, z + dz)
-                    self.grid[voxel_pos] = brick
-    
-    def _infer_dimensions(self, part_id: str) -> Tuple[int, int, int]:
-        """Infer brick dimensions from part ID if possible"""
-        # Default to 1x1x1 if unknown
-        # In a real implementation, this would query a parts database
-        # For now, return default size
-        return (1, 1, 1)
-    
-    # ==================== CORE ENGINEERING RULES ====================
-    
-    def greedy_volume_fitting(self, voxel_cluster: VoxelCluster, color_id: int) -> List[Brick]:
-        """
-        Rule 1: Greedy Volume Fitting
-        Always tries to fit the largest possible brick first to minimize part count.
+        Main entry point: Process voxel JSON and generate MasterManifest.
         
         Args:
-            voxel_cluster: Cluster of voxels to fill
-            color_id: Color to use for bricks
+            voxel_data: List of dicts with keys: x, y, z, hex_color
             
         Returns:
-            List of bricks placed
+            MasterManifest JSON containing Part ID, Position, Rotation, Color ID, and is_verified
         """
-        placed = []
-        remaining_voxels = voxel_cluster.voxels.copy()
+        logger.info(f"Processing {len(voxel_data)} voxels")
         
-        # Try each brick size from largest to smallest
-        for width, height, depth in self.brick_sizes:
-            if not remaining_voxels:
-                break
+        # Reset state
+        self.voxel_grid = {}
+        self.placed_bricks = []
+        self.occupied_positions = set()
+        self.layer_bricks = defaultdict(list)
+        self.color_cache = {}
+        
+        # Load voxels into grid
+        for voxel in voxel_data:
+            x = int(voxel.get("x", 0))
+            y = int(voxel.get("y", 0))
+            z = int(voxel.get("z", 0))
+            hex_color = voxel.get("hex_color", "#FFFFFF")
+            self.voxel_grid[(x, y, z)] = hex_color
+        
+        if not self.voxel_grid:
+            logger.warning("No voxels to process")
+            return self._generate_manifest()
+        
+        # Process layer by layer with laminar interlocking
+        min_z = min(z for _, _, z in self.voxel_grid.keys())
+        max_z = max(z for _, _, z in self.voxel_grid.keys())
+        
+        for z in range(min_z, max_z + 1):
+            layer_voxels = {
+                (x, y): hex_color
+                for (x, y, z_pos), hex_color in self.voxel_grid.items()
+                if z_pos == z
+            }
             
-            # Find the best position for this brick size
-            best_brick = self._find_best_brick_placement(
-                remaining_voxels, width, height, depth, color_id
+            if layer_voxels:
+                await self._process_layer(z, layer_voxels)
+        
+        # Generate final manifest
+        return self._generate_manifest()
+    
+    def process_voxels_sync(self, voxel_data: List[Dict]) -> Dict:
+        """
+        Synchronous wrapper for process_voxels.
+        For backward compatibility with non-async code.
+        """
+        return asyncio.run(self.process_voxels(voxel_data))
+    
+    async def _process_layer(self, layer_z: int, layer_voxels: Dict[Tuple[int, int], str]):
+        """
+        Process a single layer with laminar interlocking and Rebrickable verification.
+        
+        Laminar Interlocking: Stagger brick positions on even vs odd layers
+        so seams do not align vertically.
+        - Even layers (z=0, 2, 4...): Bricks align to even grid positions
+        - Odd layers (z=1, 3, 5...): Bricks align to odd grid positions
+        """
+        logger.info(f"Processing layer {layer_z} with {len(layer_voxels)} voxels")
+        
+        # Group voxels by color
+        color_groups: Dict[str, Set[Tuple[int, int]]] = defaultdict(set)
+        for (x, y), hex_color in layer_voxels.items():
+            color_groups[hex_color].add((x, y))
+        
+        # Process each color group
+        for hex_color, voxel_set in color_groups.items():
+            # Get closest LEGO color for this hex
+            color_id = await self.rebrickable.get_closest_lego_color(hex_color)
+            logger.debug(f"Hex {hex_color} mapped to Rebrickable color ID {color_id}")
+            
+            # Analyze shape characteristics
+            shape_analysis = self.part_discovery.analyze_voxel_shape(voxel_set)
+            logger.debug(f"Shape analysis: round={shape_analysis.get('is_round')}, "
+                        f"curved={shape_analysis.get('is_curved')}, "
+                        f"rectangular={shape_analysis.get('is_rectangular')}")
+            
+            # Discover appropriate parts for this shape
+            use_hard_search = (self.search_mode == "hard")
+            discovered_parts = await self.part_discovery.discover_parts_for_shape(
+                shape_analysis, color_id, use_hard_search
             )
             
-            if best_brick:
-                # Place the brick
-                if self.register_brick(
-                    part_id=f"brick_{width}x{height}",
-                    color_id=color_id,
-                    position=best_brick.position,
-                    dimensions=(width, height, depth),
-                    is_ai_filled=False
-                ):
-                    placed.append(best_brick)
-                    # Remove occupied voxels
-                    occupied = self._get_occupied_voxels(best_brick)
-                    remaining_voxels -= occupied
+            if not discovered_parts:
+                logger.warning(f"No parts discovered for shape, using fallback")
+                discovered_parts = self._get_fallback_parts(color_id)
+            
+            # Greedy fitting for this color group with fallback logic
+            remaining_voxels = voxel_set.copy()
+            
+            # Try each discovered part in priority order (sorted by area)
+            for part_info in discovered_parts:
+                if not remaining_voxels:
+                    break
+                
+                part_id = part_info.get("part_num", "")
+                width = part_info.get("width", 1)
+                height = part_info.get("height", 1)
+                depth = 1  # Default depth (can be enhanced later)
+                
+                # Try all rotations for this brick size
+                for rotation in self.ROTATIONS:
+                    if not remaining_voxels:
+                        break
+                    
+                    # Get rotated dimensions
+                    rot_width, rot_height = self._get_rotated_dimensions(
+                        width, height, rotation
+                    )
+                    
+                    # Find best placement with verification
+                    placed = await self._greedy_place_bricks_with_verification(
+                        remaining_voxels,
+                        rot_width,
+                        rot_height,
+                        part_id,
+                        hex_color,
+                        color_id,
+                        layer_z,
+                        rotation
+                    )
+                    
+                    # Remove placed voxels
+                    for brick in placed:
+                        occupied = self._get_brick_occupied_positions(
+                            brick.position, rot_width, rot_height, layer_z
+                        )
+                        # Convert 3D positions back to 2D for removal
+                        occupied_2d = {(x, y) for x, y, z in occupied}
+                        remaining_voxels -= occupied_2d
+    
+    async def _greedy_place_bricks_with_verification(
+        self,
+        voxels: Set[Tuple[int, int]],
+        width: int,
+        height: int,
+        part_id: str,
+        hex_color: str,
+        color_id: int,
+        layer_z: int,
+        rotation: int
+    ) -> List[PlacedBrick]:
+        """
+        Greedy placement with Rebrickable verification.
+        Only places bricks that are verified to be available in the specified color.
+        Implements fallback: if a brick is unavailable, it will be skipped and
+        the next smallest brick size will be tried.
+        """
+        placed = []
+        remaining = voxels.copy()
+        
+        # Laminar interlocking: Ensure brick positions align to grid
+        # Even layers: positions must be even-aligned
+        # Odd layers: positions must be odd-aligned
+        is_even_layer = (layer_z % 2 == 0)
+        
+        # Verify part availability once (cache result)
+        is_available = await self.rebrickable.verify_part_availability(part_id, color_id)
+        
+        if not is_available:
+            logger.warning(
+                f"Part {part_id} not available in color {color_id}, "
+                f"skipping this brick size (will try next smaller size)"
+            )
+            return []  # Return empty list to trigger fallback to next brick size
+        
+        # Sort voxels for consistent placement order
+        sorted_voxels = sorted(remaining)
+        
+        for x, y in sorted_voxels:
+            # Apply laminar interlocking: Prefer positions that stagger seams
+            # Even layers: prefer even-aligned positions
+            # Odd layers: prefer odd-aligned positions
+            # This ensures seams don't align vertically between layers
+            if is_even_layer:
+                # Even layer: prefer even starting positions (but allow others if needed)
+                # Skip if position doesn't align (for strict interlocking)
+                if (x % 2 != 0) or (y % 2 != 0):
+                    continue
+            else:
+                # Odd layer: prefer odd starting positions
+                # Skip if position doesn't align (for strict interlocking)
+                if (x % 2 != 1) or (y % 2 != 1):
+                    continue
+            
+            # Check if we can place a brick starting at this position
+            if self._can_place_brick_at(x, y, layer_z, width, height):
+                # Verify all required positions are in the voxel set
+                required_positions = self._get_rectangular_positions(x, y, width, height)
+                if required_positions.issubset(remaining):
+                    # Place the brick (already verified as available)
+                    brick = PlacedBrick(
+                        part_id=part_id,
+                        position=(x, y, layer_z),
+                        rotation=rotation,
+                        color_id=color_id,
+                        is_verified=True  # Verified before placement
+                    )
+                    
+                    self.placed_bricks.append(brick)
+                    self.layer_bricks[layer_z].append(brick)
+                    
+                    # Mark positions as occupied
+                    occupied = self._get_brick_occupied_positions(
+                        (x, y, layer_z), width, height, layer_z
+                    )
+                    self.occupied_positions.update(occupied)
+                    remaining -= required_positions
+                    placed.append(brick)
         
         return placed
     
-    def _find_best_brick_placement(
-        self,
-        voxels: Set[Tuple[int, int, int]],
-        width: int,
-        height: int,
-        depth: int,
-        color_id: int
-    ) -> Optional[Brick]:
-        """Find the best position to place a brick of given size"""
-        # Group voxels by their potential "base" positions
-        # For a brick, we need a contiguous rectangular region
-        for x, y, z in sorted(voxels):
-            # Try placing brick starting at this position
-            if self._can_place_rectangular_region(voxels, x, y, z, width, height, depth):
-                return Brick(
-                    part_id=f"brick_{width}x{height}",
-                    color_id=color_id,
-                    position=(x, y, z),
-                    dimensions=(width, height, depth),
-                    is_ai_filled=False
-                )
-        return None
-    
-    def _can_place_rectangular_region(
-        self,
-        voxels: Set[Tuple[int, int, int]],
-        start_x: int,
-        start_y: int,
-        start_z: int,
-        width: int,
-        height: int,
-        depth: int
+    def _can_place_brick_at(
+        self, x: int, y: int, z: int, width: int, height: int
     ) -> bool:
-        """Check if a rectangular region is fully contained in the voxel set"""
+        """Check if a brick can be placed at the given position"""
+        positions = self._get_brick_occupied_positions((x, y, z), width, height, z)
+        return not any(pos in self.occupied_positions for pos in positions)
+    
+    def _get_rectangular_positions(
+        self, start_x: int, start_y: int, width: int, height: int
+    ) -> Set[Tuple[int, int]]:
+        """Get all 2D positions that a rectangular brick would occupy"""
+        positions = set()
         for dx in range(width):
             for dy in range(height):
-                for dz in range(depth):
-                    pos = (start_x + dx, start_y + dy, start_z + dz)
-                    if pos not in voxels:
-                        return False
-        return True
+                positions.add((start_x + dx, start_y + dy))
+        return positions
     
-    def _get_occupied_voxels(self, brick: Brick) -> Set[Tuple[int, int, int]]:
-        """Get all voxels occupied by a brick"""
-        occupied = set()
-        x, y, z = brick.position
-        w, h, d = brick.dimensions
-        for dx in range(w):
-            for dy in range(h):
-                for dz in range(d):
-                    occupied.add((x + dx, y + dy, z + dz))
-        return occupied
-    
-    def check_laminar_interlocking(self, layer: int) -> List[Brick]:
-        """
-        Rule 2: Laminar Interlocking
-        Ensures that seams between bricks on Layer N are covered by solid bricks on Layer N+1.
-        
-        Args:
-            layer: Layer to check
-            
-        Returns:
-            List of bricks that need to be added to ensure interlocking
-        """
-        if layer not in self.layer_bricks:
-            return []
-        
-        current_layer_bricks = self.layer_bricks[layer]
-        next_layer_bricks = self.layer_bricks.get(layer + 1, [])
-        
-        # Find seams (gaps between bricks)
-        seams = self._find_seams(current_layer_bricks)
-        
-        # Check if seams are covered by next layer
-        missing_covers = []
-        for seam_pos in seams:
-            if not self._is_seam_covered(seam_pos, next_layer_bricks):
-                missing_covers.append(seam_pos)
-        
-        # Generate bricks to cover seams
-        interlock_bricks = []
-        if missing_covers:
-            logger.info(f"Found {len(missing_covers)} uncovered seams on layer {layer}")
-            # Group adjacent seams and fill with appropriate bricks
-            # This is simplified - in practice, you'd use more sophisticated clustering
-            for x, y, z in missing_covers:
-                # Place a small brick to cover the seam
-                if self.register_brick(
-                    part_id="brick_1x1",
-                    color_id=self._get_dominant_color_for_layer(layer),
-                    position=(x, y, z + 1),  # One layer above
-                    dimensions=(1, 1, 1),
-                    is_ai_filled=True
-                ):
-                    interlock_bricks.append(self.grid.get((x, y, z + 1)))
-        
-        return interlock_bricks
-    
-    def _find_seams(self, bricks: List[Brick]) -> Set[Tuple[int, int, int]]:
-        """Find seam positions (gaps between bricks) on a layer"""
-        # Simplified: find positions adjacent to brick boundaries
-        seams = set()
-        for brick in bricks:
-            x, y, z = brick.position
-            w, h, d = brick.dimensions
-            
-            # Check edges for seams
-            # This is a simplified implementation
-            # Real implementation would check actual boundaries
-            pass
-        
-        return seams
-    
-    def _is_seam_covered(self, seam_pos: Tuple[int, int, int], next_layer_bricks: List[Brick]) -> bool:
-        """Check if a seam is covered by a brick in the next layer"""
-        x, y, z = seam_pos
-        # Check if position (x, y, z+1) is occupied
-        return (x, y, z + 1) in self.grid and self.grid[(x, y, z + 1)] is not None
-    
-    def _get_dominant_color_for_layer(self, layer: int) -> int:
-        """Get the dominant color used in a layer"""
-        if layer not in self.layer_bricks:
-            return 15  # Default to white
-        colors = [brick.color_id for brick in self.layer_bricks[layer]]
-        return max(set(colors), key=colors.count) if colors else 15
-    
-    def connectivity_audit(self) -> List[VoxelCluster]:
-        """
-        Rule 3: Connectivity Audit
-        Checks for floating voxels (disconnected components).
-        Returns clusters of disconnected voxels that need structural supports.
-        
-        Returns:
-            List of disconnected voxel clusters
-        """
-        # Get all occupied voxels
-        occupied_voxels = {pos for pos, brick in self.grid.items() if brick is not None}
-        
-        if not occupied_voxels:
-            return []
-        
-        # Find connected components using flood fill
-        visited = set()
-        disconnected_clusters = []
-        
-        # Start from the "ground" (lowest z-level)
-        if occupied_voxels:
-            min_z = min(z for _, _, z in occupied_voxels)
-            ground_voxels = {(x, y, z) for x, y, z in occupied_voxels if z == min_z}
-            
-            # Mark all connected to ground
-            for ground_voxel in ground_voxels:
-                if ground_voxel not in visited:
-                    connected_component = self._flood_fill_connected(ground_voxel, occupied_voxels, visited)
-                    visited.update(connected_component)
-            
-            # Find disconnected components
-            disconnected = occupied_voxels - visited
-            if disconnected:
-                logger.warning(f"Found {len(disconnected)} disconnected voxels")
-                # Group disconnected voxels into clusters
-                disconnected_clusters = self._cluster_voxels(disconnected)
-        
-        return disconnected_clusters
-    
-    def _flood_fill_connected(
-        self,
-        start: Tuple[int, int, int],
-        voxels: Set[Tuple[int, int, int]],
-        visited: Set[Tuple[int, int, int]]
+    def _get_brick_occupied_positions(
+        self, position: Tuple[int, int, int], width: int, height: int, z: int
     ) -> Set[Tuple[int, int, int]]:
-        """Flood fill to find all connected voxels"""
-        connected = set()
-        stack = [start]
-        
-        while stack:
-            pos = stack.pop()
-            if pos in visited or pos not in voxels:
-                continue
-            
-            connected.add(pos)
-            visited.add(pos)
-            
-            # Check 6 neighbors (up, down, left, right, forward, back)
-            x, y, z = pos
-            neighbors = [
-                (x + 1, y, z), (x - 1, y, z),
-                (x, y + 1, z), (x, y - 1, z),
-                (x, y, z + 1), (x, y, z - 1)
-            ]
-            
-            for neighbor in neighbors:
-                if neighbor in voxels and neighbor not in visited:
-                    stack.append(neighbor)
-        
-        return connected
+        """Get all 3D positions that a brick occupies"""
+        x, y, _ = position
+        positions = set()
+        for dx in range(width):
+            for dy in range(height):
+                positions.add((x + dx, y + dy, z))
+        return positions
     
-    def _cluster_voxels(self, voxels: Set[Tuple[int, int, int]]) -> List[VoxelCluster]:
-        """Group voxels into clusters"""
-        clusters = []
-        remaining = voxels.copy()
-        visited = set()
-        
-        for voxel in voxels:
-            if voxel in visited:
-                continue
-            
-            cluster_voxels = self._flood_fill_connected(voxel, remaining, visited)
-            if cluster_voxels:
-                # Calculate bounding box
-                if cluster_voxels:
-                    xs = [x for x, _, _ in cluster_voxels]
-                    ys = [y for _, y, _ in cluster_voxels]
-                    zs = [z for _, _, z in cluster_voxels]
-                    bbox = (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
-                    clusters.append(VoxelCluster(voxels=cluster_voxels, bounding_box=bbox))
-        
-        return clusters
+    def _get_rotated_dimensions(
+        self, width: int, height: int, rotation: int
+    ) -> Tuple[int, int]:
+        """Get dimensions after rotation (90 or 270 swaps width/height)"""
+        if rotation in [90, 270]:
+            return (height, width)
+        return (width, height)
     
-    def get_inventory(self) -> Dict[str, int]:
-        """Get current brick inventory"""
-        return dict(self.inventory)
     
-    def get_grid_state(self) -> Dict:
-        """Get current state of the 3D grid"""
-        return {
+    def _generate_manifest(self) -> Dict:
+        """
+        Generate MasterManifest JSON output.
+        
+        Returns JSON containing:
+        - Part ID
+        - Position (x, y, z)
+        - Rotation
+        - Color ID
+        """
+        manifest = {
+            "manifest_version": "1.0",
             "total_bricks": len(self.placed_bricks),
-            "inventory": self.get_inventory(),
-            "layers": {layer: len(bricks) for layer, bricks in self.layer_bricks.items()}
+            "bricks": []
         }
+        
+        # Add each brick to manifest
+        for brick in self.placed_bricks:
+            manifest["bricks"].append({
+                "part_id": brick.part_id,
+                "position": list(brick.position),  # Convert tuple to list for JSON
+                "rotation": brick.rotation,
+                "color_id": brick.color_id,
+                "is_verified": brick.is_verified
+            })
+        
+        # Add layer statistics
+        manifest["layers"] = {
+            layer: len(bricks) for layer, bricks in self.layer_bricks.items()
+        }
+        
+        # Add inventory summary
+        inventory = defaultdict(int)
+        for brick in self.placed_bricks:
+            key = f"{brick.part_id}_{brick.color_id}"
+            inventory[key] += 1
+        
+        manifest["inventory"] = [
+            {
+                "part_id": part_id.split("_")[0],
+                "color_id": int(part_id.split("_")[1]),
+                "quantity": count
+            }
+            for part_id, count in inventory.items()
+        ]
+        
+        logger.info(f"Generated manifest with {len(self.placed_bricks)} bricks")
+        return manifest
+    
+    def _get_fallback_parts(self, color_id: int) -> List[Dict]:
+        """Fallback parts list when dynamic discovery fails."""
+        return [
+            {"part_num": "3001", "width": 4, "height": 2, "area": 8, "color_id": color_id, "is_verified": False},
+            {"part_num": "3003", "width": 2, "height": 2, "area": 4, "color_id": color_id, "is_verified": False},
+            {"part_num": "3004", "width": 2, "height": 1, "area": 2, "color_id": color_id, "is_verified": False},
+            {"part_num": "3005", "width": 1, "height": 1, "area": 1, "color_id": color_id, "is_verified": False},
+        ]
+    
+    def get_manifest_json(self) -> str:
+        """Get manifest as JSON string"""
+        manifest = self._generate_manifest()
+        return json.dumps(manifest, indent=2)

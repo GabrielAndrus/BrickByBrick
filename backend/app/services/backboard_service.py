@@ -1,6 +1,12 @@
+
+"""
+Orchestrator and multi-modal router
+"""
+
 import os
 import json
 import logging
+from typing import List, Dict, Optional
 from backboard import BackboardClient
 from dotenv import load_dotenv
 from app.services.master_builder import MasterBuilder, VoxelCluster
@@ -17,6 +23,13 @@ class BackboardService:
         
         # Initialize the Master Builder (Source of Truth for 3D grid)
         self.master_builder = MasterBuilder()
+        
+        # Scene Deltas: History of all changes for interactive instructions
+        # Each delta represents a change to the Three.js scene
+        self.scene_deltas: List[Dict] = []
+        
+        # Thread ID to scene deltas mapping (for multi-session support)
+        self.thread_deltas: Dict[str, List[Dict]] = {}
         
         # Define the tools the AI can use to interact with your LEGO logic
         self.tools = [
@@ -107,6 +120,14 @@ class BackboardService:
                 "4. Use the 'place_brick' tool strategically for structural integrity."
             )
 
+            # Record model switch delta
+            model_delta = self._create_scene_delta(
+                timestamp=len(self.scene_deltas),
+                action="model_switch",
+                model_switch="gemini-3-pro"
+            )
+            self._add_scene_delta(thread_id, model_delta)
+            
             # Use Gemini 3 Pro for high-reasoning gap filling
             response = await self.client.add_message(
                 thread_id=thread_id,
@@ -121,6 +142,14 @@ class BackboardService:
                 await self._handle_tool_calls(thread_id, response.tool_calls)
         
         # Phase 2: Bulk Phase (Low Thinking) - Fill solid areas rapidly
+        # Record model switch to Flash
+        model_delta = self._create_scene_delta(
+            timestamp=len(self.scene_deltas),
+            action="model_switch",
+            model_switch="gemini-3-flash"
+        )
+        self._add_scene_delta(thread_id, model_delta)
+        
         bulk_prompt = (
             f"BULK PHASE: Fill the remaining solid areas of this object: {json.dumps(object_data)}. "
             "Use greedy volume fitting: place the largest possible bricks first (2x4, then 2x3, etc.) "
@@ -153,8 +182,11 @@ class BackboardService:
         """
         Executes the Python logic for the AI's requested brick placements.
         This is where the Master Builder's register_brick is called.
+        Also records Scene Deltas for interactive instructions.
         """
         results = []
+        timestamp = len(self.scene_deltas)  # Sequential timestamp
+        
         for call in tool_calls:
             if call.function.name == "place_brick":
                 args = json.loads(call.function.arguments)
@@ -170,6 +202,22 @@ class BackboardService:
                 
                 logger.info(f"🧱 AI placing brick: {args['part_id']} at {args['position']} - Success: {success}")
                 
+                if success:
+                    # Record Scene Delta for this brick placement
+                    scene_delta = self._create_scene_delta(
+                        timestamp=timestamp,
+                        action="add_brick",
+                        brick_id=f"brick_{args['part_id']}_{timestamp}",
+                        part_id=args.get("part_id"),
+                        color_id=args.get("color_id"),
+                        position=list(args.get("position", [0, 0, 0])),
+                        dimensions=list(args.get("dimensions", [1, 1, 1])) if "dimensions" in args else [1, 1, 1],
+                        is_ai_filled=args.get("is_ai_filled", False),
+                        model_switch=None  # Will be set if model changes
+                    )
+                    self._add_scene_delta(thread_id, scene_delta)
+                    timestamp += 1
+                
                 results.append({
                     "tool_call_id": call.id,
                     "output": json.dumps({"status": "success" if success else "failed", "placed": success})
@@ -177,6 +225,17 @@ class BackboardService:
             elif call.function.name == "finalize_assembly_step":
                 args = json.loads(call.function.arguments)
                 logger.info(f"📋 Finalizing assembly step {args.get('step_number')}: {args.get('description')}")
+                
+                # Record step delta
+                step_delta = self._create_scene_delta(
+                    timestamp=timestamp,
+                    action="step_marker",
+                    step_number=args.get("step_number"),
+                    description=args.get("description")
+                )
+                self._add_scene_delta(thread_id, step_delta)
+                timestamp += 1
+                
                 results.append({
                     "tool_call_id": call.id,
                     "output": json.dumps({"status": "step_finalized"})
@@ -215,3 +274,122 @@ class BackboardService:
     def get_master_builder_state(self) -> dict:
         """Get the current state of the Master Builder"""
         return self.master_builder.get_grid_state()
+    
+    def _create_scene_delta(
+        self,
+        timestamp: int,
+        action: str,
+        brick_id: Optional[str] = None,
+        part_id: Optional[str] = None,
+        color_id: Optional[int] = None,
+        position: Optional[List[int]] = None,
+        dimensions: Optional[List[int]] = None,
+        is_ai_filled: Optional[bool] = None,
+        model_switch: Optional[str] = None,
+        step_number: Optional[int] = None,
+        description: Optional[str] = None
+    ) -> Dict:
+        """
+        Create a Scene Delta representing a change to the Three.js scene.
+        
+        Scene Deltas tell the frontend which objects to show/hide for timeline scrubbing.
+        """
+        delta = {
+            "timestamp": timestamp,
+            "action": action,
+            "threejs_object_id": brick_id,  # ID of the Three.js object to show/hide
+        }
+        
+        if action == "add_brick":
+            delta.update({
+                "visible": True,  # Show this brick
+                "part_id": part_id,
+                "color_id": color_id,
+                "position": position,
+                "dimensions": dimensions,
+                "is_ai_filled": is_ai_filled,
+                "model_switch": model_switch  # e.g., "gemini-3-pro" -> "gemini-3-flash"
+            })
+        elif action == "step_marker":
+            delta.update({
+                "step_number": step_number,
+                "description": description
+            })
+        elif action == "model_switch":
+            delta.update({
+                "from_model": model_switch,
+                "to_model": model_switch
+            })
+        
+        return delta
+    
+    def _add_scene_delta(self, thread_id: str, delta: Dict):
+        """Add a scene delta to the history for a thread"""
+        if thread_id not in self.thread_deltas:
+            self.thread_deltas[thread_id] = []
+        self.thread_deltas[thread_id].append(delta)
+        self.scene_deltas.append(delta)
+    
+    def get_interactive_instructions(self, thread_id: str) -> List[Dict]:
+        """
+        Get interactive instructions as a list of Scene Deltas.
+        
+        Each delta tells the frontend which Three.js objects to show/hide
+        for timeline scrubbing. The frontend can step through these deltas
+        to visualize the "History of Creation".
+        
+        Returns:
+            List of Scene Deltas, each representing a change to the scene
+        """
+        if thread_id not in self.thread_deltas:
+            return []
+        
+        deltas = self.thread_deltas[thread_id]
+        
+        # Add model switch markers if needed
+        enhanced_deltas = []
+        current_model = None
+        
+        for delta in deltas:
+            # Track model switches
+            if delta.get("model_switch"):
+                if current_model and current_model != delta["model_switch"]:
+                    enhanced_deltas.append({
+                        "timestamp": delta["timestamp"],
+                        "action": "model_switch",
+                        "from_model": current_model,
+                        "to_model": delta["model_switch"],
+                        "description": f"Switched from {current_model} to {delta['model_switch']}"
+                    })
+                current_model = delta["model_switch"]
+            
+            enhanced_deltas.append(delta)
+        
+        return enhanced_deltas
+    
+    def get_instruction_timeline(self, thread_id: str) -> Dict:
+        """
+        Get a complete timeline of instructions with metadata.
+        
+        Returns:
+            Dictionary with timeline metadata and deltas
+        """
+        deltas = self.get_interactive_instructions(thread_id)
+        
+        # Count different action types
+        action_counts = {}
+        for delta in deltas:
+            action = delta.get("action", "unknown")
+            action_counts[action] = action_counts.get(action, 0) + 1
+        
+        return {
+            "thread_id": thread_id,
+            "total_deltas": len(deltas),
+            "action_counts": action_counts,
+            "deltas": deltas,
+            "metadata": {
+                "description": "History of Creation - Every brick choice, model switch, and structural fix",
+                "format": "threejs_scene_deltas",
+                "version": "1.0"
+            }
+        }
