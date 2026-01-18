@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import InstructionBook from './components/InstructionBook'
 import { ModelDetailsDisplay } from './components/ModelDetailsDisplay'
 import { 
@@ -12,6 +14,8 @@ import {
 } from '../lib/legoManualGenerator'
 import { convertToLegoDesign } from '../lib/geminiLegoConverter'
 import { convertVideoTo3DObject, executeAndAddObject } from '../lib/videoToThreeJS'
+import { buildLegoSceneFromManifest } from '../lib/legoThreeJSBuilder'
+import { buildMemoTransaction } from '../lib/bbCoin'
 
 // Default empty data for when no build is loaded
 const emptyManualData: InstructionManual = {
@@ -31,6 +35,87 @@ const emptyPieceCount: PieceCount = {
   estimated_cost: 0
 }
 
+const NFT_GRADIENTS = [
+  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+  'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+  'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+  'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+  'linear-gradient(135deg, #9945ff 0%, #14f195 100%)',
+]
+function hashId(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i) | 0; return Math.abs(h) }
+
+// Hardcoded sample BB Coins (date, build metadata, pieces)
+type CoinEntry = {
+  id: string
+  projectName: string
+  date: string
+  buildId: string
+  totalPieces: number
+  difficulty?: string
+  estimatedTimeMinutes?: number
+  breakdown: Array<{ part_id: string; quantity: number; piece_name?: string; color_name?: string }>
+}
+const SAMPLE_COINS: CoinEntry[] = [
+  {
+    id: 'sample-1',
+    projectName: 'My Dorm Room',
+    date: '2025-01-15T14:30:00Z',
+    buildId: 'build-dorm-001',
+    totalPieces: 247,
+    difficulty: 'Intermediate',
+    estimatedTimeMinutes: 120,
+    breakdown: [
+      { part_id: '3001', quantity: 45, piece_name: 'Brick 2×4', color_name: 'Red' },
+      { part_id: '3003', quantity: 32, piece_name: 'Brick 2×2', color_name: 'Blue' },
+      { part_id: '3022', quantity: 28, piece_name: 'Plate 2×2', color_name: 'White' },
+      { part_id: '3020', quantity: 18, piece_name: 'Plate 2×4', color_name: 'Light Bluish Gray' },
+      { part_id: '3832', quantity: 1, piece_name: 'Baseplate 32×32', color_name: 'Dark Tan' },
+      { part_id: '3068', quantity: 24, piece_name: 'Tile 2×2', color_name: 'Black' },
+      { part_id: '3004', quantity: 36, piece_name: 'Brick 1×2', color_name: 'Bright Green' },
+      { part_id: '3005', quantity: 63, piece_name: 'Brick 1×1', color_name: 'Yellow' },
+    ],
+  },
+  {
+    id: 'sample-2',
+    projectName: 'Campus Café',
+    date: '2025-01-10T09:15:00Z',
+    buildId: 'build-cafe-002',
+    totalPieces: 189,
+    difficulty: 'Beginner',
+    estimatedTimeMinutes: 90,
+    breakdown: [
+      { part_id: '3001', quantity: 52, piece_name: 'Brick 2×4', color_name: 'Reddish Brown' },
+      { part_id: '3023', quantity: 40, piece_name: 'Plate 1×2', color_name: 'Tan' },
+      { part_id: '3622', quantity: 22, piece_name: 'Brick 1×3', color_name: 'White' },
+      { part_id: '3069', quantity: 18, piece_name: 'Tile 1×2', color_name: 'Black' },
+      { part_id: '3034', quantity: 2, piece_name: 'Plate 2×8', color_name: 'Dark Bluish Gray' },
+      { part_id: '3002', quantity: 30, piece_name: 'Brick 2×3', color_name: 'Orange' },
+      { part_id: '3070', quantity: 25, piece_name: 'Tile 1×1', color_name: 'Trans-Clear' },
+    ],
+  },
+  {
+    id: 'sample-3',
+    projectName: 'Study Nook',
+    date: '2025-01-05T16:45:00Z',
+    buildId: 'build-study-003',
+    totalPieces: 312,
+    difficulty: 'Advanced',
+    estimatedTimeMinutes: 180,
+    breakdown: [
+      { part_id: '3001', quantity: 68, piece_name: 'Brick 2×4', color_name: 'Blue' },
+      { part_id: '3003', quantity: 44, piece_name: 'Brick 2×2', color_name: 'Dark Gray' },
+      { part_id: '3020', quantity: 38, piece_name: 'Plate 2×4', color_name: 'Light Gray' },
+      { part_id: '3040', quantity: 16, piece_name: 'Slope 45° 2×1', color_name: 'Red' },
+      { part_id: '3022', quantity: 42, piece_name: 'Plate 2×2', color_name: 'Green' },
+      { part_id: '3004', quantity: 55, piece_name: 'Brick 1×2', color_name: 'White' },
+      { part_id: '3297', quantity: 12, piece_name: 'Slope 33° 2×2', color_name: 'Black' },
+      { part_id: '3021', quantity: 20, piece_name: 'Plate 2×3', color_name: 'Yellow' },
+      { part_id: '3005', quantity: 17, piece_name: 'Brick 1×1', color_name: 'Orange' },
+    ],
+  },
+]
+
 export default function Home() {
   const brickContainerRef = useRef<HTMLDivElement>(null)
   const envContainerRef = useRef<HTMLDivElement>(null)
@@ -44,6 +129,7 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [showThreeJS, setShowThreeJS] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewMode, setViewMode] = useState<'scene' | 'lego'>('scene')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const threeJSRendererRef = useRef<any>(null)
   
@@ -68,6 +154,19 @@ export default function Home() {
   const [addingObject, setAddingObject] = useState(false)
   const [selectedModelAnalysis, setSelectedModelAnalysis] = useState<any>(null)
   const [showModelDetails, setShowModelDetails] = useState(false)
+
+  // Solana: BB Coin (send LEGO set metadata on-chain)
+  const { connection } = useConnection()
+  const { publicKey, sendTransaction } = useWallet()
+  const { setVisible: setWalletModalVisible } = useWalletModal()
+  const [bbCoinSending, setBbCoinSending] = useState(false)
+  const [bbCoinStatus, setBbCoinStatus] = useState<string | null>(null)
+
+  // BB Coins popup: login first, then show user coins (hardcoded samples for now)
+  const [showCoinsPopup, setShowCoinsPopup] = useState(false)
+  const [hoveredCoin, setHoveredCoin] = useState<CoinEntry | null>(null)
+  const hoverLeaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const coins = SAMPLE_COINS
 
   // Auto-generate LEGO design when environment is loaded
   useEffect(() => {
@@ -131,40 +230,46 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (showThreeJS && envContainerRef.current) {
-      console.log('Initializing Three.js dorm room scene...')
-      
-      // Clean up any existing renderer first
+    if (!showThreeJS || !envContainerRef.current) return
+
+    // Clean up any existing renderer
+    if (threeJSRendererRef.current) {
+      threeJSRendererRef.current.cleanup()
+      threeJSRendererRef.current = null
+    }
+
+    const container = envContainerRef.current
+    while (container.firstChild) container.removeChild(container.firstChild)
+
+    const timer = setTimeout(async () => {
+      try {
+        if (viewMode === 'lego') {
+          let manifest = buildData?.manifest
+          if (!manifest) {
+            try { manifest = await loadManifestFromFile('/bedroom_lego_manifest.json') } catch (e) {
+              console.warn('No manifest for LEGO view, falling back to scene', e)
+              return initDormRoomThreeJS()
+            }
+          }
+          const res = await buildLegoSceneFromManifest(container, manifest)
+          threeJSRendererRef.current = { renderer: res.renderer, scene: res.scene, cleanup: res.cleanup }
+          console.log('LEGO Three.js scene initialized')
+        } else {
+          await initDormRoomThreeJS()
+        }
+      } catch (error) {
+        console.error('Error initializing Three.js:', error)
+      }
+    }, 100)
+
+    return () => {
+      clearTimeout(timer)
       if (threeJSRendererRef.current) {
         threeJSRendererRef.current.cleanup()
         threeJSRendererRef.current = null
       }
-      
-      // Clear the container
-      const container = envContainerRef.current
-      while (container.firstChild) {
-        container.removeChild(container.firstChild)
-      }
-      
-      console.log('Container dimensions:', container.clientWidth, container.clientHeight)
-      
-      // Initialize Three.js with a small delay to ensure container is ready
-      const timer = setTimeout(() => {
-        console.log('Calling initDormRoomThreeJS...')
-        initDormRoomThreeJS().catch((error) => {
-          console.error('Error initializing Three.js:', error)
-        })
-      }, 100)
-      
-      return () => {
-        clearTimeout(timer)
-        if (threeJSRendererRef.current) {
-          threeJSRendererRef.current.cleanup()
-          threeJSRendererRef.current = null
-        }
-      }
     }
-  }, [showThreeJS])
+  }, [showThreeJS, viewMode, buildData])
 
   // Cleanup Three.js when component unmounts
   useEffect(() => {
@@ -583,6 +688,32 @@ export default function Home() {
     }
   }
 
+  // Send current LEGO set metadata to BB Coin (on-chain Memo)
+  const sendToBbCoin = async () => {
+    if (!publicKey || !sendTransaction || !buildData) return
+    setBbCoinSending(true)
+    setBbCoinStatus(null)
+    try {
+      const { transaction } = buildMemoTransaction({
+        projectName: projectName,
+        buildId: buildData.build_id,
+        totalPieces: pieceCount.total_pieces,
+        stepCount: manualData.total_steps,
+        estimatedCost: pieceCount.estimated_cost,
+        breakdown: pieceCount.breakdown.map((b) => ({ part_id: b.part_id, quantity: b.quantity })),
+      })
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized')
+      transaction.recentBlockhash = blockhash
+      transaction.feePayer = publicKey
+      const sig = await sendTransaction(transaction, connection, { skipPreflight: false })
+      setBbCoinStatus(`Saved to BB Coin: ${sig.slice(0, 8)}...`)
+    } catch (e) {
+      setBbCoinStatus(`Error: ${e instanceof Error ? e.message : 'Failed to send'}`)
+    } finally {
+      setBbCoinSending(false)
+    }
+  }
+
   // Handle object video upload
   const handleObjectVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -652,13 +783,23 @@ export default function Home() {
   return (
     <>
       <header>
-        <div className="header-left">
+        <div className="header-center-group">
           <img src="/Brick.png" alt="Brick by Brick" className="header-logo-img" />
-        </div>
-        <div className="header-right">
           <img src="/banner.png" alt="Banner" className="banner-img" />
         </div>
       </header>
+
+      {/* Sticky BB Coins (bottom-left) */}
+      <div
+        className="bb-coins-fab"
+        onClick={() => setShowCoinsPopup(true)}
+        title="Your BB Coins"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowCoinsPopup(true) } }}
+      >
+        <img src="/coin.svg" alt="BB Coins" className="bb-coins-fab-img" />
+      </div>
 
       <div className="hero-section">
         <div className="content-wrapper">
@@ -759,6 +900,13 @@ export default function Home() {
                 </div>
               )}
               <div className="zoom-controls">
+                <button 
+                  className={`zoom-btn ${viewMode === 'lego' ? 'zoom-btn-active' : ''}`}
+                  onClick={() => setViewMode(m => m === 'scene' ? 'lego' : 'scene')}
+                  title={viewMode === 'lego' ? 'Switch to 3D scene' : 'Switch to LEGO build'}
+                >
+                  🧱
+                </button>
                 <button 
                   className="zoom-btn" 
                   onClick={toggleFullscreen}
@@ -869,7 +1017,20 @@ export default function Home() {
                 <i className="fa-solid fa-book"></i>
                 View Details
               </button>
+              <button
+                className="view-details-btn bb-coin-btn"
+                onClick={sendToBbCoin}
+                disabled={!hasEnvironment || !buildData || !publicKey || bbCoinSending}
+                title={!publicKey ? 'Connect wallet first' : !hasEnvironment ? 'Load an environment first' : 'Save current LEGO set metadata to BB Coin on Solana'}
+              >
+                {bbCoinSending ? '...' : 'Save to BB Coin'}
+              </button>
             </div>
+            {bbCoinStatus && (
+              <div className={`bb-coin-status ${bbCoinStatus.startsWith('Error') ? 'error' : ''}`}>
+                {bbCoinStatus}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -991,6 +1152,69 @@ export default function Home() {
           modelAnalysis={selectedModelAnalysis}
           onClose={() => setShowModelDetails(false)}
         />
+      )}
+
+      {/* BB Coins Popup: login first, then user coins */}
+      {showCoinsPopup && (
+        <div className="coins-popup-overlay" onClick={() => setShowCoinsPopup(false)}>
+          <div className="coins-popup" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="coins-popup-close" onClick={() => setShowCoinsPopup(false)} aria-label="Close">×</button>
+
+            {!publicKey ? (
+              <>
+                <h2 className="coins-popup-title">Login to BB Coins</h2>
+                <div className="coins-popup-connect">
+                  <p>Connect your wallet to view your LEGO builds and BB Coins.</p>
+                  <button type="button" className="coins-connect-btn" onClick={() => setWalletModalVisible(true)}>Connect wallet</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="coins-popup-title">Your BB Coins</h2>
+                <div className="coins-popup-body">
+                  <div className="coins-grid">
+                    {coins.map((c) => (
+                      <div
+                        key={c.id}
+                        className="coin-cell"
+                        onMouseEnter={() => { if (hoverLeaveRef.current) clearTimeout(hoverLeaveRef.current); hoverLeaveRef.current = null; setHoveredCoin(c) }}
+                        onMouseLeave={() => { if (hoverLeaveRef.current) clearTimeout(hoverLeaveRef.current); hoverLeaveRef.current = setTimeout(() => { setHoveredCoin(null); hoverLeaveRef.current = null }, 180) }}
+                      >
+                        <img src="/coin.svg" alt="" className="coin-img" />
+                      </div>
+                    ))}
+                  </div>
+                  {hoveredCoin && (
+                    <div
+                      className="coin-nft-card"
+                      style={{ background: NFT_GRADIENTS[hashId(hoveredCoin.id) % NFT_GRADIENTS.length] }}
+                      onMouseEnter={() => { if (hoverLeaveRef.current) { clearTimeout(hoverLeaveRef.current); hoverLeaveRef.current = null } }}
+                      onMouseLeave={() => { setHoveredCoin(null) }}
+                    >
+                      <div className="coin-nft-inner">
+                        <span className="coin-nft-date">{new Date(hoveredCoin.date).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                        <span className="coin-nft-name">{hoveredCoin.projectName}</span>
+                        <div className="coin-nft-meta">
+                          {hoveredCoin.difficulty && <span>{hoveredCoin.difficulty}</span>}
+                          {hoveredCoin.estimatedTimeMinutes != null && <span>~{hoveredCoin.estimatedTimeMinutes} min</span>}
+                          <span>{hoveredCoin.totalPieces} pcs</span>
+                        </div>
+                        <div className="coin-nft-pieces-list">
+                          <strong>Pieces</strong>
+                          {hoveredCoin.breakdown.slice(0, 8).map((p, i) => (
+                            <span key={i}>{p.piece_name || p.part_id} ({p.color_name || '—'}) ×{p.quantity}</span>
+                          ))}
+                          {hoveredCoin.breakdown.length > 8 && <span>… +{hoveredCoin.breakdown.length - 8} more</span>}
+                        </div>
+                        <a href={`https://www.rebrickable.com/search/?q=${encodeURIComponent(hoveredCoin.projectName)}`} target="_blank" rel="noopener noreferrer" className="coin-nft-link">Buy LEGOs for this build</a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </>
   )

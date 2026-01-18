@@ -50,7 +50,7 @@ async function enhanceWithGemini(
   try {
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
     const prompt = `You are writing instructions for a LEGO building manual. Write a brief, clear instruction (1-2 sentences max) for this building step:
     

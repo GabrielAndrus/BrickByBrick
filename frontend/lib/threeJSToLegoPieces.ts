@@ -40,7 +40,7 @@ export async function analyzeThreeJSForLegoPieces(
 ): Promise<ThreeJSModelAnalysis> {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   // Truncate code if too long
   const codeSample = threeJSCode.substring(0, 2000);

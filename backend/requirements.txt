@@ -11,5 +11,9 @@ opencv-python==4.12.0.88
 pillow==11.3.0
 requests==2.32.5
 scipy==1.17.0
+solana>=0.34.0
+solders>=0.21.0
+pynacl>=1.5.0
+base58>=2.1.1
 # backboard - Optional: Install separately if Backboard API is available
 # The Backboard SDK may need to be installed from a private repository or custom source

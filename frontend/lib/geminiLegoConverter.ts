@@ -254,7 +254,7 @@ export async function generateModelInterpretations(
 
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   const prompt = buildLegoConversionPrompt(pieceList, roomType, totalBricks);
 
@@ -455,7 +455,7 @@ export async function convertToLegoDesign(
 
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   // Use model analysis pieces if available, otherwise use environment pieces
   const piecesToUse = modelAnalysis?.extractedPieces || pieceBreakdown;

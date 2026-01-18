@@ -64,7 +64,7 @@ export async function generateLegoInstructions(
 ): Promise<EnhancedManual> {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   // Generate cover and overall content
   const coverPrompt = `You are creating a LEGO instruction manual for a build called "${projectName}".
@@ -210,7 +210,7 @@ export async function enhanceStepWithGemini(
 ): Promise<LegoStyleStep> {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   const partsList = Object.entries(step.piece_counts)
     .map(([id, qty]) => `${qty}× ${PART_NAMES[id] || `Part ${id}`}`)

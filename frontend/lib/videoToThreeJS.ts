@@ -32,27 +32,39 @@ export async function convertVideoTo3DObject(
 
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-  // Simplified prompt that asks for object-specific Three.js code
-  const prompt = `Create THREE.JS code for a ${objectName}. 
+  // LEGO-focused prompt - create LEGO brick representation
+  const prompt = `You are a LEGO Master Builder. Create THREE.JS code that renders a "${objectName}" built entirely from LEGO bricks.
 
-Return ONLY the raw JavaScript code (no markdown blocks, no backticks, no explanations).
+IMPORTANT: The object must look like it's made of LEGO bricks - use box geometries for bricks with cylinder studs on top.
 
-The code must:
-1. Create a THREE.Group()
-2. Add geometries and materials to create the object
-3. Add created meshes to the group
-4. Have realistic colors and materials
-5. Fit within a 2x2x2 unit space
-6. Use standard THREE.js imports (THREE is global)
+Return ONLY raw JavaScript code (no markdown, no backticks, no explanations).
 
-Example pattern:
+Requirements:
+1. Create a THREE.Group() as the main container
+2. Use BoxGeometry for LEGO bricks (standard brick is 0.8 wide x 0.96 tall x 0.8 deep per stud)
+3. Add CylinderGeometry studs on top of each brick (radius 0.12, height 0.08)
+4. Use LEGO colors: Red (0xc91a09), Blue (0x0055bf), Yellow (0xf2cd37), Green (0x237841), White (0xf4f4f4), Black (0x1b1b1b)
+5. Build the object using stacked bricks like a real LEGO set
+6. Fit within a 2x2x2 unit space
+7. THREE is available as a global
+
+Example LEGO brick creation:
 const group = new THREE.Group()
-const material = new THREE.MeshStandardMaterial({ color: 0xcccccc })
-const geometry = new THREE.BoxGeometry(1, 1, 1)
-const mesh = new THREE.Mesh(geometry, material)
-group.add(mesh)
+const brickMat = new THREE.MeshStandardMaterial({ color: 0xc91a09, roughness: 0.3 })
+const brickGeo = new THREE.BoxGeometry(1.6, 0.96, 0.8) // 2x1 brick
+const brick = new THREE.Mesh(brickGeo, brickMat)
+brick.position.y = 0.48
+group.add(brick)
+// Add studs
+const studGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.08, 12)
+const stud1 = new THREE.Mesh(studGeo, brickMat)
+stud1.position.set(-0.4, 1.0, 0)
+group.add(stud1)
+const stud2 = new THREE.Mesh(studGeo, brickMat)
+stud2.position.set(0.4, 1.0, 0)
+group.add(stud2)
 group`;
 
   try {
@@ -107,7 +119,7 @@ async function analyzeThreeJSForLegoPieces(
 ) {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.0-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
   // Truncate code if too long
   const codeSample = threeJSCode.substring(0, 2000);

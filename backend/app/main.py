@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import endpoints
 from app.api.lego_build_endpoint import router as lego_build_router, init_lego_services
 from app.api.threejs_pipeline import router as threejs_router, init_threejs_services
+from app.api.solana_bb_coin import router as solana_bb_router
 from app.services.backboard_lego_memory import BackboardLegoMemory
 from app.services.master_builder import MasterBuilder
 
@@ -25,6 +26,7 @@ app.add_middleware(
 app.include_router(endpoints.router)
 app.include_router(lego_build_router)
 app.include_router(threejs_router)
+app.include_router(solana_bb_router)
 
 # Initialize LEGO services on startup
 @app.on_event("startup")

@@ -1,5 +1,6 @@
 import './globals.css'
 import type { Metadata } from 'next'
+import { SolanaWalletProvider } from './components/SolanaWalletProvider'
 
 export const metadata: Metadata = {
   title: 'Building Blocks',
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <SolanaWalletProvider>{children}</SolanaWalletProvider>
+      </body>
     </html>
   )
 }

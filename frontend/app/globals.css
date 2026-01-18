@@ -37,38 +37,195 @@ header {
   position: relative;
   z-index: 10;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  padding: 0 50px;
 }
 
-.header-left {
-  width: auto;
-  display: flex;
-  align-items: center;
-  padding-left: 50px;
-  background: white;
-  flex-shrink: 0;
+/* BB Coins: sticky bottom-left (bigger) */
+.bb-coins-fab {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 50;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
-
-.header-logo-img {
-  height: 45px;
-  width: auto;
+.bb-coins-fab:hover {
+  transform: scale(1.06);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.bb-coins-fab-img {
+  display: block;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
 }
 
-.header-title {
-  font-weight: 700;
-  color: #555;
-  font-size: 14px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-
-.header-right {
+/* BB Coins popup */
+.coins-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
-  background: white;
-  padding: 0 50px;
-  flex-shrink: 0;
+  justify-content: center;
+  z-index: 1000;
+}
+.coins-popup {
+  position: relative;
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 24px 20px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+.coins-popup-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #eee;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #555;
+}
+.coins-popup-close:hover {
+  background: #ddd;
+  color: #111;
+}
+.coins-popup-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111;
+}
+.coins-popup-connect,
+.coins-popup-empty {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+.coins-connect-btn {
+  margin-top: 12px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #9945ff, #14f195);
+  color: #111;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coins-connect-btn:hover {
+  opacity: 0.95;
+}
+.coins-popup-body {
+  position: relative;
+  min-height: 120px;
+}
+.coins-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.coin-cell {
+  cursor: default;
+  padding: 4px;
+  border-radius: 12px;
+  transition: background 0.2s;
+}
+.coin-cell:hover {
+  background: rgba(153, 69, 255, 0.1);
+}
+.coin-img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  display: block;
+}
+.coin-nft-card {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 240px;
+  padding: 3px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.coin-nft-inner {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.coin-nft-date {
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.coin-nft-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111;
+}
+.coin-nft-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #555;
+}
+.coin-nft-meta span {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.coin-nft-pieces-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #333;
+}
+.coin-nft-pieces-list strong {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #555;
+}
+.coin-nft-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9945ff;
+  text-decoration: none;
+  margin-top: 4px;
+}
+.coin-nft-link:hover {
+  text-decoration: underline;
+}
+
+.header-center-group {
+  display: flex;
+  align-items: center;
+  gap: 64px;
+}
+
+.header-logo-img {
+  height: 58px;
+  width: auto;
+  object-fit: contain;
 }
 
 .banner-img {
@@ -225,6 +382,7 @@ h1 em {
   font-size: 14px;
   border-top-left-radius: 15px;
   border-top-right-radius: 15px;
+  margin-top: 16px;
   margin-bottom: -1px;
   position: relative;
   width: fit-content;
@@ -527,6 +685,17 @@ h1 em {
   color: #333;
 }
 
+.zoom-btn-active {
+  background: #e3000b;
+  color: white;
+  border-color: #c91a09;
+}
+
+.zoom-btn-active:hover {
+  background: #c91a09;
+  color: white;
+}
+
 /* View Details Button */
 /* Full Set Button Container */
 .full-set-buttons {
@@ -579,6 +748,32 @@ h1 em {
 .view-details-btn i,
 .switch-model-btn i {
   font-size: 14px;
+}
+
+.bb-coin-btn {
+  background: linear-gradient(90deg, #9945ff, #14f195) !important;
+  color: #111 !important;
+}
+
+.bb-coin-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.bb-coin-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bb-coin-status {
+  position: absolute;
+  bottom: 4px;
+  left: 15px;
+  font-size: 11px;
+  color: #237841;
+}
+
+.bb-coin-status.error {
+  color: #c62828;
 }
 
 /* Nothing to Display Modal */
