@@ -47,17 +47,10 @@ header {
   flex-shrink: 0;
 }
 
-.logo-bb {
-  font-weight: 900;
-  font-size: 40px;
-  color: #d32f2f;
-  letter-spacing: -2px;
-  margin-right: 15px;
-  display: flex;
-}
-
-.logo-bb span {
-  color: #f57f17; /* Second B is orange */
+.header-logo-img {
+  height: 45px;
+  width: auto;
+  object-fit: contain;
 }
 
 .header-title {
@@ -100,40 +93,16 @@ header {
   border-left: 1px solid #eee;
 }
 
-/* Simulating the MLH logo */
-.mlh-logo {
-  width: 40px;
+.mlh-logo-img {
   height: 40px;
-  background: #fff;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  color: #d62d20;
-  border: 2px solid #ccc;
-  font-size: 12px;
+  width: auto;
+  object-fit: contain;
 }
 
-.mlh-logo img {
-  width: 100%;
-}
-
-/* Simulating the Deer Logo */
-.deer-logo {
-  background: #1a1a1a;
-  width: 60px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.deer-logo svg {
-  width: 30px;
-  fill: none;
-  stroke: #b388ff;
-  stroke-width: 2;
+.uofthacks-logo-img {
+  height: 50px;
+  width: auto;
+  object-fit: contain;
 }
 
 /* --- SECTION 1: HERO --- */
@@ -148,14 +117,15 @@ header {
 .content-wrapper {
   display: flex;
   width: 100%;
-  max-width: 1200px;
+  max-width: 1400px;
   align-items: center;
   justify-content: space-between;
+  gap: 40px;
 }
 
 /* Text Section */
 .text-section {
-  width: 45%;
+  width: 40%;
 }
 
 h1 {
@@ -178,91 +148,46 @@ h1 em {
   max-width: 450px;
 }
 
-/* --- 3D CSS LEGO BLOCKS --- */
+.text-section .tagline {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-style: italic;
+  color: #d32f2f;
+  margin-bottom: 25px;
+  letter-spacing: 1px;
+}
+
+/* --- 3D BRICK VIEWER --- */
 .visual-section {
-  width: 50%;
-  height: 400px;
+  width: 55%;
+  height: 450px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  perspective: 1000px;
+  overflow: hidden;
 }
 
-.lego-stack {
-  transform-style: preserve-3d;
-  transform: rotateX(-20deg) rotateY(-35deg);
-}
-
-/* Generic Brick Styles */
-.brick {
-  width: 200px;
-  height: 80px;
+.brick-viewer-container {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(145deg, #ececec 0%, #e0e0e0 50%, #d8d8d8 100%);
+  border-radius: 16px;
+  overflow: hidden;
   position: relative;
-  margin-bottom: -40px;
-  transform-style: preserve-3d;
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.face {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  color: white;
-  font-size: 2rem;
-  text-transform: uppercase;
-  letter-spacing: 2px;
+.brick-viewer-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 16px;
 }
 
-.face-front {
-  width: 200px;
-  height: 80px;
-  transform: translateZ(50px);
-}
-
-.face-top {
-  width: 200px;
-  height: 100px;
-  background: inherit;
-  filter: brightness(1.2);
-  transform: rotateX(90deg) translateZ(50px);
-  background-image: radial-gradient(circle at center, rgba(0,0,0,0.1) 10px, transparent 12px), radial-gradient(circle at center, inherit 10px, transparent 0);
-  background-size: 50px 50px;
-}
-
-.face-top::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(circle at 15px 15px, rgba(255,255,255,0.4) 2px, transparent 5px);
-  background-size: 50px 50px;
-}
-
-.face-side {
-  width: 100px;
-  height: 80px;
-  background: inherit;
-  filter: brightness(0.7);
-  transform: rotateY(90deg) translateZ(150px);
-}
-
-.red-brick {
-  background-color: var(--brick-red);
-  transform: translateX(-50px);
-}
-
-.blue-brick {
-  background-color: var(--brick-blue);
-  transform: translateX(30px);
-  z-index: 2;
-}
-
-.gold-brick {
-  background-color: var(--brick-gold);
-  transform: translateX(80px);
-  z-index: 1;
-}
 
 /* --- NEW SECTION: BUILDER UI --- */
 .builder-container {
@@ -432,29 +357,6 @@ h1 em {
   color: #888;
   font-size: 24px;
   cursor: pointer;
-}
-
-/* Frog Button (Floating) */
-.frog-btn {
-  position: absolute;
-  bottom: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 50px;
-  height: 50px;
-  background: #007bff;
-  border-radius: 50%;
-  border: 3px solid white;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 5;
-  overflow: hidden;
-}
-
-.frog-icon {
-  font-size: 24px;
 }
 
 /* --- FULL SET (BOX ART) --- */

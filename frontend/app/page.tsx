@@ -1,10 +1,189 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+
 export default function Home() {
+  const brickContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Dynamically import Three.js only on client side
+    const initThreeJS = async () => {
+      if (!brickContainerRef.current) return;
+      
+      const THREE = await import('three');
+      const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js');
+
+      const container = brickContainerRef.current;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      // Scene setup
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xe4e4e4);
+
+      const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+      camera.position.set(4, 3, 5);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.domElement.style.display = 'block';
+      renderer.domElement.style.width = '100%';
+      renderer.domElement.style.height = '100%';
+      container.appendChild(renderer.domElement);
+
+      // Controls
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 2;
+      controls.target.set(0, 1, 0);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(5, 10, 5);
+      directionalLight.castShadow = true;
+      scene.add(directionalLight);
+
+      // Create text texture for brick faces
+      const createTextTexture = (text: string, bgColor: string) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d')!;
+        
+        // Background
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Text - using Montserrat font (same as site)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 72px Montserrat, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        return texture;
+      };
+
+      // LEGO Brick creation function with text
+      const createLegoBrick = (color: number, colorHex: string, width: number, depth: number, y: number, text: string) => {
+        const group = new THREE.Group();
+        
+        // Main brick body
+        const brickHeight = 0.96;
+        const geometry = new THREE.BoxGeometry(width * 0.8, brickHeight, depth * 0.8);
+        
+        // Create materials array for each face (right, left, top, bottom, front, back)
+        const textTexture = createTextTexture(text, colorHex);
+        const baseMaterial = new THREE.MeshStandardMaterial({ 
+          color, 
+          roughness: 0.3,
+          metalness: 0.1
+        });
+        const textMaterial = new THREE.MeshStandardMaterial({ 
+          map: textTexture,
+          roughness: 0.3,
+          metalness: 0.1
+        });
+        
+        // Materials: [+X, -X, +Y, -Y, +Z (front), -Z (back)]
+        const materials = [
+          baseMaterial, // right
+          baseMaterial, // left
+          baseMaterial, // top
+          baseMaterial, // bottom
+          textMaterial, // front - show text
+          baseMaterial, // back
+        ];
+        
+        const brick = new THREE.Mesh(geometry, materials);
+        brick.castShadow = true;
+        brick.receiveShadow = true;
+        group.add(brick);
+
+        // Add studs on top
+        const studGeometry = new THREE.CylinderGeometry(0.24, 0.24, 0.17, 16);
+        const studMaterial = new THREE.MeshStandardMaterial({ 
+          color, 
+          roughness: 0.3,
+          metalness: 0.1
+        });
+        
+        for (let x = 0; x < width; x++) {
+          for (let z = 0; z < depth; z++) {
+            const stud = new THREE.Mesh(studGeometry, studMaterial);
+            stud.position.set(
+              (x - (width - 1) / 2) * 0.8,
+              brickHeight / 2 + 0.085,
+              (z - (depth - 1) / 2) * 0.8
+            );
+            stud.castShadow = true;
+            group.add(stud);
+          }
+        }
+
+        group.position.y = y;
+        return group;
+      };
+
+      // Create stacked bricks - "PIECE BY PIECE"
+      const redBrick = createLegoBrick(0xc91a09, '#c91a09', 4, 2, 0, 'PIECE');
+      redBrick.position.x = -0.4;
+      scene.add(redBrick);
+
+      const blueBrick = createLegoBrick(0x0055bf, '#0055bf', 4, 2, 1.13, 'BY');
+      blueBrick.position.x = 0.2;
+      scene.add(blueBrick);
+
+      const yellowBrick = createLegoBrick(0xf2cd37, '#f2cd37', 4, 2, 2.26, 'PIECE');
+      yellowBrick.position.x = 0.6;
+      scene.add(yellowBrick);
+
+      // Animation loop
+      const animate = () => {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      };
+      animate();
+
+      // Handle resize
+      const handleResize = () => {
+        if (!container) return;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h, false);
+      };
+      window.addEventListener('resize', handleResize);
+      
+      // Initial resize to ensure proper fit
+      handleResize();
+
+      // Cleanup
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        container.removeChild(renderer.domElement);
+        renderer.dispose();
+      };
+    };
+
+    initThreeJS();
+  }, []);
+
   return (
     <>
       <header>
         <div className="header-left">
-          <div className="logo-bb">B<span>B</span></div>
-          <div className="header-title">Building Blocks</div>
+          <img src="/Brick.png" alt="Brick by Brick" className="header-logo-img" />
         </div>
         <div className="header-center"></div>
         <div className="header-right">
@@ -12,15 +191,10 @@ export default function Home() {
             <i className="fa-brands fa-github"></i>
           </div>
           <div className="icon-box">
-            <div className="mlh-logo">MLH</div>
+            <img src="/MLH.png" alt="MLH" className="mlh-logo-img" />
           </div>
           <div className="icon-box" style={{ border: 'none' }}>
-            <div className="deer-logo">
-              <svg viewBox="0 0 24 24">
-                <path d="M12 2C8 2 6 5 6 7c0 1.5 1 2.5 1 2.5S5 12 5 14c0 1.5 1 3 3 3 0 0 .5 2 4 2s4-2 4-2c2 0 3-1.5 3-3 0-2-2-4.5-2-4.5s1-1 1-2.5c0-2-2-5-6-5z" fill="none" stroke="#b388ff" strokeWidth="2"/>
-                <path d="M8 7l-2-2m10 2l2-2" stroke="#b388ff" strokeWidth="2"/>
-              </svg>
-            </div>
+            <img src="/uofthacks.png" alt="UofT Hacks" className="uofthacks-logo-img" />
           </div>
         </div>
       </header>
@@ -29,31 +203,18 @@ export default function Home() {
         <div className="content-wrapper">
           <div className="text-section">
             <h1>Rebuild<br/>your <em>identity,</em></h1>
+            <p className="tagline">piece by piece.</p>
             <p>
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+              Transform your space into a buildable LEGO set. Upload your room, 
+              and we'll generate a brick-by-brick recreation complete with 
+              step-by-step instructions.
             </p>
             <p>
-              Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+              Your memories, your space, your story — now in LEGO form.
             </p>
           </div>
           <div className="visual-section">
-            <div className="lego-stack">
-              <div className="brick red-brick">
-                <div className="face face-front">PIECE</div>
-                <div className="face face-top"></div>
-                <div className="face face-side"></div>
-              </div>
-              <div className="brick blue-brick">
-                <div className="face face-front">BY</div>
-                <div className="face face-top"></div>
-                <div className="face face-side"></div>
-              </div>
-              <div className="brick gold-brick">
-                <div className="face face-front">PIECE</div>
-                <div className="face face-top"></div>
-                <div className="face face-side"></div>
-              </div>
-            </div>
+            <div className="brick-viewer-container" ref={brickContainerRef}></div>
           </div>
         </div>
       </div>
@@ -92,9 +253,6 @@ export default function Home() {
                   <i className="fa-solid fa-plus"></i>
                 </div>
               </div>
-            </div>
-            <div className="frog-btn">
-              <span className="frog-icon">🐸</span>
             </div>
           </div>
         </div>
