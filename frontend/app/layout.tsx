@@ -1,8 +1,9 @@
-import './globals.css';
+import './globals.css'
+import type { Metadata } from 'next'
 
-export const metadata = {
-  title: 'Brick by Brick',
-  description: 'Build your world, brick by brick',
+export const metadata: Metadata = {
+  title: 'Building Blocks',
+  description: 'Rebuild your identity, piece by piece',
 }
 
 export default function RootLayout({
@@ -12,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning className="antialiased">{children}</body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   )
 }

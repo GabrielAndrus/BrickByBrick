@@ -1,55 +1,271 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,700;0,800;1,800&display=swap');
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 
-/* Custom LEGO brick pattern for header */
-.lego-pattern {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 14px,
-    rgba(0, 0, 0, 0.05) 14px, /* not quite sure what these colors represent, but will return */
-    rgba(0, 0, 0, 0.05) 16px
-  ),
-  repeating-linear-gradient(
-    90deg,
-    transparent,
-    transparent 14px,
-    rgba(0, 0, 0, 0.05) 14px,
-    rgba(0, 0, 0, 0.05) 16px
-  );
-  background-size: 16px 16px;
+:root {
+  --bg-color: #ecf0f5;
+  --header-yellow: #fcd51a;
+  --brick-red: #a81d26;
+  --brick-blue: #00608c;
+  --brick-gold: #a67c00;
+  --text-dark: #1a1a1a;
 }
 
-/* Loading spinner animation */
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-/* Pulse animation for loading states */
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Smooth transitions */
 * {
-  transition: all 0.2s ease;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Montserrat', sans-serif;
+  background-color: var(--bg-color);
+  overflow-x: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- HEADER --- */
+header {
+  height: 80px;
+  display: flex;
+  background: white;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  position: relative;
+  z-index: 10;
+}
+
+.header-left {
+  width: 300px;
+  display: flex;
+  align-items: center;
+  padding-left: 30px;
+  background: white;
+  flex-shrink: 0;
+}
+
+.logo-bb {
+  font-weight: 900;
+  font-size: 40px;
+  color: #d32f2f;
+  letter-spacing: -2px;
+  margin-right: 15px;
+  display: flex;
+}
+
+.logo-bb span {
+  color: #f57f17; /* Second B is orange */
+}
+
+.header-title {
+  font-weight: 700;
+  color: #555;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* The LEGO Stud Pattern */
+.header-center {
+  flex-grow: 1;
+  background-color: var(--header-yellow);
+  /* CSS Pattern to create the studs */
+  background-image: 
+    radial-gradient(circle at 50% 40%, rgba(255,255,255,0.6) 2px, transparent 3px), /* Highlight */
+    radial-gradient(circle at 50% 60%, rgba(0,0,0,0.1) 2px, transparent 3px), /* Shadow */
+    radial-gradient(circle, #edc613 8px, transparent 9px); /* The stud base */
+  background-size: 30px 30px; /* Size of one stud grid unit */
+  position: relative;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  background: white;
+  padding: 0 20px;
+}
+
+.icon-box {
+  width: 50px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  color: #333;
+  border-left: 1px solid #eee;
+}
+
+/* Simulating the MLH logo */
+.mlh-logo {
+  width: 40px;
+  height: 40px;
+  background: #fff;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #d62d20;
+  border: 2px solid #ccc;
+  font-size: 12px;
+}
+
+.mlh-logo img {
+  width: 100%;
+}
+
+/* Simulating the Deer Logo */
+.deer-logo {
+  background: #1a1a1a;
+  width: 60px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deer-logo svg {
+  width: 30px;
+  fill: #b388ff;
+}
+
+/* --- MAIN CONTENT --- */
+main {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10%;
+}
+
+.content-wrapper {
+  display: flex;
+  width: 100%;
+  max-width: 1200px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Text Section */
+.text-section {
+  width: 50%;
+  padding-right: 50px;
+}
+
+h1 {
+  font-size: 4rem;
+  line-height: 1.1;
+  color: black;
+  margin-bottom: 30px;
+}
+
+h1 em {
+  font-style: italic;
+  font-weight: 800;
+}
+
+.text-section p {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: #444;
+  margin-bottom: 20px;
+  max-width: 450px;
+}
+
+/* --- 3D CSS LEGO BLOCKS --- */
+.visual-section {
+  width: 50%;
+  height: 500px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1000px; /* Essential for 3D effect */
+}
+
+.lego-stack {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateX(-20deg) rotateY(-35deg); /* The isometric angle */
+}
+
+/* Generic Brick Styles */
+.brick {
+  width: 200px;
+  height: 80px;
+  position: relative;
+  margin-bottom: -40px; /* Stack overlapping */
+  transform-style: preserve-3d;
+}
+
+.face {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: white;
+  font-size: 2rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.face-front {
+  width: 200px;
+  height: 80px;
+  transform: translateZ(50px);
+}
+
+.face-top {
+  width: 200px;
+  height: 100px;
+  background: inherit;
+  filter: brightness(1.2); /* Make top slightly lighter */
+  transform: rotateX(90deg) translateZ(50px);
+  
+  /* The studs on the brick top */
+  background-image: 
+    radial-gradient(circle at center, rgba(0,0,0,0.1) 10px, transparent 12px), /* Shadow */
+    radial-gradient(circle at center, inherit 10px, transparent 0); 
+  background-size: 50px 50px; /* 4x2 grid of studs */
+}
+
+/* Add physical looking studs using shadows */
+.face-top::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(circle at 15px 15px, rgba(255,255,255,0.4) 2px, transparent 5px);
+  background-size: 50px 50px;
+}
+
+.face-side {
+  width: 100px;
+  height: 80px;
+  background: inherit;
+  filter: brightness(0.7); /* Make side darker for shadow */
+  transform: rotateY(90deg) translateZ(150px);
+}
+
+/* Specific Brick Colors */
+.red-brick {
+  background-color: var(--brick-red);
+  transform: translateX(-50px) translateZ(0px); /* Offset position */
+}
+
+.blue-brick {
+  background-color: var(--brick-blue);
+  transform: translateX(30px) translateZ(0px);
+  z-index: 2;
+}
+
+.gold-brick {
+  background-color: var(--brick-gold);
+  transform: translateX(80px) translateZ(0px);
+  z-index: 1;
 }
