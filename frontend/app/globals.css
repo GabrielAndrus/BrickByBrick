@@ -711,11 +711,10 @@ h1 em {
 /* View Details Button */
 /* Full Set Button Container */
 .full-set-buttons {
-  position: absolute;
-  bottom: 15px;
-  left: 15px;
   display: flex;
+  justify-content: center;
   gap: 10px;
+  margin-top: 16px;
 }
 
 .view-details-btn,
@@ -730,6 +729,7 @@ h1 em {
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
@@ -1944,6 +1944,7 @@ h1 em {
 /* Box Front Face */
 .box-front {
   flex-grow: 1;
+  min-width: 0;
   background: white;
   border: 1px solid #999;
   border-left: none;
@@ -1952,6 +1953,14 @@ h1 em {
   justify-content: center;
   position: relative;
   z-index: 2;
+  overflow: hidden;
+}
+
+.box-front-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .box-front-text {

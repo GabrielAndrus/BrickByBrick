@@ -248,14 +248,14 @@ export default function Home() {
           if (!manifest) {
             try { manifest = await loadManifestFromFile('/bedroom_lego_manifest.json') } catch (e) {
               console.warn('No manifest for LEGO view, falling back to scene', e)
-              return initDormRoomThreeJS()
+              return initDormRoomThreeJS(videoPreview || undefined)
             }
           }
           const res = await buildLegoSceneFromManifest(container, manifest)
           threeJSRendererRef.current = { renderer: res.renderer, scene: res.scene, cleanup: res.cleanup }
           console.log('LEGO Three.js scene initialized')
         } else {
-          await initDormRoomThreeJS()
+          await initDormRoomThreeJS(videoPreview || undefined)
         }
       } catch (error) {
         console.error('Error initializing Three.js:', error)
@@ -269,7 +269,7 @@ export default function Home() {
         threeJSRendererRef.current = null
       }
     }
-  }, [showThreeJS, viewMode, buildData])
+  }, [showThreeJS, viewMode, buildData, videoPreview])
 
   // Cleanup Three.js when component unmounts
   useEffect(() => {
@@ -296,7 +296,7 @@ export default function Home() {
     }
   }
 
-  const initDormRoomThreeJS = async () => {
+  const initDormRoomThreeJS = async (videoUrl?: string | null) => {
     if (!envContainerRef.current) return
 
     const THREE = await import('three')
@@ -306,18 +306,15 @@ export default function Home() {
     const width = container.clientWidth
     const height = container.clientHeight
 
-    // Scene setup
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xf2f2f0)
-    scene.fog = new THREE.Fog(0xf2f2f0, 2, 15)
+    scene.background = new THREE.Color(0x1a1a1a)
 
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100)
-    camera.position.set(3, 2.5, 3)
+    camera.position.set(0, 0, 2.5)
+    camera.lookAt(0, 0, 0)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setSize(width, height)
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.domElement.style.display = 'block'
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
@@ -325,11 +322,80 @@ export default function Home() {
     renderer.domElement.style.top = '0'
     renderer.domElement.style.left = '0'
     container.appendChild(renderer.domElement)
-    console.log('Canvas appended to container')
 
     const controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, 1, 0)
+    controls.target.set(0, 0, 0)
     controls.enableDamping = true
+
+    // When we have an uploaded video, show it on a large plane (environment + objects = the video)
+    if (videoUrl) {
+      const video = document.createElement('video')
+      video.src = videoUrl
+      video.crossOrigin = 'anonymous'
+      video.muted = true
+      video.loop = true
+      video.playsInline = true
+      video.play().catch(() => {})
+
+      const videoTexture = new THREE.VideoTexture(video)
+      videoTexture.minFilter = THREE.LinearFilter
+      videoTexture.magFilter = THREE.LinearFilter
+
+      const aspect = 16 / 9
+      const planeW = aspect > 1 ? 2.4 : 2.4 * aspect
+      const planeH = aspect > 1 ? 2.4 / aspect : 2.4
+      const geometry = new THREE.PlaneGeometry(planeW, planeH)
+      const material = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide })
+      const plane = new THREE.Mesh(geometry, material)
+      scene.add(plane)
+
+      const ambient = new THREE.AmbientLight(0xffffff, 0.6)
+      scene.add(ambient)
+
+      const animate = () => {
+        requestAnimationFrame(animate)
+        if (videoTexture.image?.readyState >= 2) videoTexture.needsUpdate = true
+        controls.update()
+        renderer.render(scene, camera)
+      }
+      animate()
+
+      const handleResize = () => {
+        if (!container) return
+        const w = container.clientWidth
+        const h = container.clientHeight
+        camera.aspect = w / h
+        camera.updateProjectionMatrix()
+        renderer.setSize(w, h, false)
+      }
+      window.addEventListener('resize', handleResize)
+      handleResize()
+
+      threeJSRendererRef.current = {
+        renderer,
+        scene,
+        cleanup: () => {
+          video.pause()
+          video.src = ''
+          videoTexture.dispose()
+          material.dispose()
+          geometry.dispose()
+          window.removeEventListener('resize', handleResize)
+          if (container?.contains(renderer.domElement)) container.removeChild(renderer.domElement)
+          renderer.dispose()
+        },
+      }
+      return
+    }
+
+    // --- Fallback: dorm room when no video ---
+    scene.background = new THREE.Color(0xf2f2f0)
+    scene.fog = new THREE.Fog(0xf2f2f0, 2, 15)
+    camera.position.set(3, 2.5, 3)
+    controls.target.set(0, 1, 0)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    console.log('Canvas appended to container')
 
     // Materials
     const materials = {
@@ -785,8 +851,14 @@ export default function Home() {
   return (
     <>
       <header>
-        <img src="/Brick.png" alt="Brick by Brick" className="header-logo-left" />
-        <img src="/banner.png" alt="Building Blocks" className="header-banner" />
+      <img
+  src="/Brick.png"
+  alt="Brick by Brick"
+  style={{ marginLeft: "72px" }}
+  className="header-logo-left"
+/>
+
+       
       </header>
 
       {/* Sticky BB Coins (bottom-left) */}
@@ -995,42 +1067,40 @@ export default function Home() {
                 <div className="spine-sku">202601</div>
                 <div className="spine-line"></div>
                 
-                <div className="spine-name">Name of<br/>Lego Set</div>
-                <div className="spine-pcs">XXX<br/>pcs/pzs</div>
+                <div className="spine-name">{projectName}</div>
+                <div className="spine-pcs">{pieceCount.total_pieces || '—'}<br/>pcs</div>
                 <div className="spine-sub">Building Toy<br/>Jouet de construction</div>
               </div>
               <div className="box-front">
-                <div className="box-front-text">3d model of the<br/>environment +<br/>objects</div>
+                {videoPreview ? (
+                  <video
+                    src={videoPreview}
+                    muted
+                    loop
+                    autoPlay
+                    playsInline
+                    className="box-front-video"
+                  />
+                ) : (
+                  <div className="box-front-text">3d model of the<br/>environment +<br/>objects</div>
+                )}
               </div>
             </div>
-            <div className="full-set-buttons">
-              <button 
-                className="view-details-btn"
-                onClick={() => {
-                  if (hasEnvironment) {
-                    setShowInstructionBook(true)
-                  } else {
-                    setShowNothingModal(true)
-                  }
-                }}
-              >
-                <i className="fa-solid fa-book"></i>
-                View Details
-              </button>
-              <button
-                className="view-details-btn bb-coin-btn"
-                onClick={sendToBbCoin}
-                disabled={!hasEnvironment || !buildData || !publicKey || bbCoinSending}
-                title={!publicKey ? 'Connect wallet first' : !hasEnvironment ? 'Load an environment first' : 'Save current LEGO set metadata to BB Coin on Solana'}
-              >
-                {bbCoinSending ? '...' : 'Save to BB Coin'}
-              </button>
-            </div>
-            {bbCoinStatus && (
-              <div className={`bb-coin-status ${bbCoinStatus.startsWith('Error') ? 'error' : ''}`}>
-                {bbCoinStatus}
-              </div>
-            )}
+          </div>
+          <div className="full-set-buttons">
+            <button 
+              className="view-details-btn"
+              onClick={() => {
+                if (hasEnvironment) {
+                  setShowInstructionBook(true)
+                } else {
+                  setShowNothingModal(true)
+                }
+              }}
+            >
+              <i className="fa-solid fa-book"></i>
+              View Details
+            </button>
           </div>
         </div>
       </div>
