@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LEGO Dorm Room Scene Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #container {
+            display: flex;
+            height: 100vh;
+            width: 100%;
+        }
+
+        /* Input Panel */
+        #inputPanel {
+            width: 320px;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+            color: #ffffff;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 2px 0 15px rgba(0, 0, 0, 0.3);
+            border-right: 1px solid #404060;
+        }
+
+        #inputPanel h1 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #00d4ff;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+        }
+
+        #inputPanel h2 {
+            font-size: 0.9rem;
+            color: #aaaaaa;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #404060;
+            padding-bottom: 5px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            color: #cccccc;
+            font-weight: 500;
+        }
+
+        .input-group input,
+        .input-group select,
+        .input-group textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #404060;
+            border-radius: 4px;
+            background-color: #2d2d44;
+            color: #ffffff;
+            font-size: 0.9rem;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+            background-color: #333344;
+        }
+
+        .input-group textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 212, 255, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .placeholder-box {
+            background-color: rgba(0, 212, 255, 0.1);
+            border: 2px dashed #00d4ff;
+            border-radius: 4px;
+            padding: 15px;
+            text-align: center;
+            color: #00d4ff;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+
+        /* 3D Viewport */
+        #viewportContainer {
+            flex: 1;
+            position: relative;
+            background-color: #1a1a1a;
+        }
+
+        canvas { 
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            font-family: sans-serif;
+            font-size: 0.9rem;
+            padding: 10px 15px;
+            border-radius: 4px;
+            border-left: 3px solid #00d4ff;
+            text-shadow: 1px 1px 2px black;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Scrollbar styling */
+        #inputPanel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #inputPanel::-webkit-scrollbar-track {
+            background: #1e1e2e;
+        }
+
+        #inputPanel::-webkit-scrollbar-thumb {
+            background: #404060;
+            border-radius: 4px;
+        }
+
+        #inputPanel::-webkit-scrollbar-thumb:hover {
+            background: #505080;
+        }
+
+        @media (max-width: 768px) {
+            #container {
+                flex-direction: column;
+            }
+            
+            #inputPanel {
+                width: 100%;
+                max-height: 30vh;
+                border-right: none;
+                border-bottom: 1px solid #404060;
+            }
+            
+            #viewportContainer {
+                height: 70vh;
+            }
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="container">
+        <!-- INPUT PANEL -->
+        <div id="inputPanel">
+            <h1>🧱 Scene Viewer</h1>
+            
+            <div class="placeholder-box">
+                ⚙️ Input Configuration Panel<br>
+                (Ready for integration)
+            </div>
+
+            <h2>Project Settings</h2>
+            <div class="input-group">
+                <label for="projectName">Project Name</label>
+                <input type="text" id="projectName" placeholder="Enter project name" value="My Dorm Room">
+            </div>
+
+            <div class="input-group">
+                <label for="roomType">Room Type</label>
+                <select id="roomType">
+                    <option value="bedroom">Bedroom</option>
+                    <option value="office">Office</option>
+                    <option value="living-room">Living Room</option>
+                    <option value="kitchen">Kitchen</option>
+                </select>
+            </div>
+
+            <h2>Voxel Data</h2>
+            <div class="input-group">
+                <label for="voxelData">Voxel JSON (will be auto-generated from 3D input)</label>
+                <textarea id="voxelData" placeholder='[{"x": 0, "y": 0, "z": 0, "hex_color": "#8B4513"}]'></textarea>
+            </div>
+
+            <h2>Actions</h2>
+            <button id="generateBtn">Generate LEGO Build</button>
+            <button id="exportBtn">Export to LDraw</button>
+            <button id="resetBtn">Reset Scene</button>
+        </div>
+
+        <!-- 3D VIEWPORT -->
+        <div id="viewportContainer">
+            <div id="info">
+                Dorm Room Digital Twin<br>
+                <small>Use mouse to rotate • Scroll to zoom</small>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf2f2f0); 
+        scene.fog = new THREE.Fog(0xf2f2f0, 2, 15);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(3, 2.5, 3); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('viewportContainer').appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1, 0);
+        controls.enableDamping = true;
+
+        // --- MATERIALS ---
+        const materials = {
+            floor: new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 }), 
+            wall: new THREE.MeshStandardMaterial({ color: 0xfdfdfd, roughness: 0.8 }),
+            woodLight: new THREE.MeshStandardMaterial({ color: 0xeebb99, roughness: 0.6 }), 
+            woodDark: new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5 }), 
+            metalBlack: new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.6, roughness: 0.4 }),
+            fabricBlue: new THREE.MeshStandardMaterial({ color: 0x334488, roughness: 1.0 }), 
+            plasticWhite: new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.3 }),
+            poohYellow: new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 1.0 }),
+            poohRed: new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 1.0 }),
+            coneOrange: new THREE.MeshStandardMaterial({ color: 0xff6600, roughness: 0.4 }),
+            cork: new THREE.MeshStandardMaterial({ color: 0xccaa88, roughness: 1.0 })
+        };
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const ceilingLight = new THREE.PointLight(0xffffee, 0.8, 10);
+        ceilingLight.position.set(0, 2.8, 0);
+        ceilingLight.castShadow = true;
+        scene.add(ceilingLight);
+
+        // --- GEOMETRY ---
+
+        // 1. ROOM SHELL
+        const roomGroup = new THREE.Group();
+        // Floor
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), materials.floor);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        roomGroup.add(floor);
+        // Walls
+        const wallBack = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 0.1), materials.wall);
+        wallBack.position.set(0, 1.5, -2.5);
+        roomGroup.add(wallBack);
+        const wallRight = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3, 5), materials.wall);
+        wallRight.position.set(2.5, 1.5, 0);
+        roomGroup.add(wallRight);
+        const wallLeft = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3, 5), materials.wall);
+        wallLeft.position.set(-2.5, 1.5, 0);
+        roomGroup.add(wallLeft);
+        scene.add(roomGroup);
+
+        // 2. WALL SHELVES (Right Wall)
+        function createClutter(width) {
+            const group = new THREE.Group();
+            const colors = [0xffffff, 0x333333, 0xaa5555, 0x55aa55];
+            for(let i=0; i<8; i++) {
+                const h = 0.1 + Math.random()*0.15;
+                const r = 0.03 + Math.random()*0.03;
+                const geo = Math.random() > 0.5 ? new THREE.BoxGeometry(r*2, h, r*2) : new THREE.CylinderGeometry(r, r, h);
+                const mat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random()*colors.length)] });
+                const item = new THREE.Mesh(geo, mat);
+                item.position.set((Math.random()-0.5)*width*0.8, h/2, (Math.random()-0.5)*0.1);
+                group.add(item);
+            }
+            return group;
+        }
+
+        const shelfGroup = new THREE.Group();
+        for(let i=0; i<3; i++) {
+            const plank = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 0.25), materials.woodLight);
+            plank.position.set(0, i * 0.4, 0);
+            plank.castShadow = true;
+            shelfGroup.add(plank);
+            const bracket1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.25), materials.metalBlack);
+            bracket1.position.set(-0.5, i*0.4 - 0.1, 0);
+            shelfGroup.add(bracket1);
+            const bracket2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.25), materials.metalBlack);
+            bracket2.position.set(0.5, i*0.4 - 0.1, 0);
+            shelfGroup.add(bracket2);
+            const items = createClutter(1.2);
+            items.position.y = i * 0.4 + 0.025;
+            shelfGroup.add(items);
+        }
+        shelfGroup.position.set(2.4, 1.4, 1.0); 
+        shelfGroup.rotation.y = -Math.PI/2;
+        scene.add(shelfGroup);
+
+        // 3. BOOK RACK & FRIDGE
+        const rackGroup = new THREE.Group();
+        const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.6), materials.metalBlack);
+        fridge.position.y = 0.4;
+        fridge.castShadow = true;
+        rackGroup.add(fridge);
+        const coffeeMaker = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.25), new THREE.MeshStandardMaterial({color:0x999999}));
+        coffeeMaker.position.set(0, 0.92, 0);
+        rackGroup.add(coffeeMaker);
+        const rackFrame = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.3), new THREE.MeshBasicMaterial({color:0x000000, wireframe:true}));
+        rackFrame.position.set(0, 1.3, -0.1);
+        rackGroup.add(rackFrame);
+        for(let i=0; i<8; i++) {
+            const book = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.08, 0.25), new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff }));
+            book.position.set(0, 0.9 + (i*0.12), -0.1);
+            book.rotation.y = (Math.random() - 0.5) * 0.2;
+            rackGroup.add(book);
+        }
+        rackGroup.position.set(2.2, 0, -0.5);
+        rackGroup.rotation.y = -Math.PI/2;
+        scene.add(rackGroup);
+
+        // 4. DESK AREA
+        const deskGroup = new THREE.Group();
+        const deskTop = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 0.7), materials.woodDark);
+        deskTop.position.y = 0.75;
+        deskTop.castShadow = true;
+        deskGroup.add(deskTop);
+        const legGeo = new THREE.BoxGeometry(0.05, 0.75, 0.7);
+        const legL = new THREE.Mesh(legGeo, materials.woodDark);
+        legL.position.set(-0.65, 0.375, 0);
+        deskGroup.add(legL);
+        const legR = new THREE.Mesh(legGeo, materials.woodDark);
+        legR.position.set(0.65, 0.375, 0);
+        deskGroup.add(legR);
+        const pitcher = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.06, 0.25), materials.plasticWhite);
+        pitcher.position.set(0.4, 0.9, 0.1);
+        deskGroup.add(pitcher);
+        const chair = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), materials.fabricBlue);
+        chair.position.set(0, 0.4, 0.4);
+        deskGroup.add(chair);
+        deskGroup.position.set(1.5, 0, -2.1);
+        scene.add(deskGroup);
+
+        // 5. DRESSER & POOH & CORKBOARD
+        const dresserGroup = new THREE.Group();
+        const dresserBody = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.5), materials.woodLight);
+        dresserBody.position.y = 0.45;
+        dresserBody.castShadow = true;
+        dresserGroup.add(dresserBody);
+        for(let i=0; i<3; i++) {
+            const drawer = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.25, 0.02), materials.woodLight);
+            drawer.position.set(0, 0.2 + (i*0.28), 0.26);
+            dresserGroup.add(drawer);
+        }
+        const poohGroup = new THREE.Group();
+        const poohBody = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), materials.poohYellow);
+        poohGroup.add(poohBody);
+        const poohShirt = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.15, 16), materials.poohRed);
+        poohShirt.position.y = 0.1;
+        poohGroup.add(poohShirt);
+        const poohHead = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), materials.poohYellow);
+        poohHead.position.y = 0.35;
+        poohGroup.add(poohHead);
+        poohGroup.position.set(-0.3, 1.15, 0);
+        poohGroup.rotation.y = 0.5;
+        dresserGroup.add(poohGroup);
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 16), materials.coneOrange);
+        cone.position.set(0.4, 1.1, 0);
+        dresserGroup.add(cone);
+        dresserGroup.position.set(-2.2, 0, -1.0);
+        dresserGroup.rotation.y = Math.PI/2;
+        scene.add(dresserGroup);
+
+        const corkboard = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 0.05), materials.cork);
+        corkboard.position.set(-2.45, 1.8, -1.0);
+        corkboard.rotation.y = Math.PI/2;
+        for(let i=0; i<5; i++) {
+            const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.3), materials.wall);
+            paper.position.set(0, 0, 0.03);
+            paper.position.x = (Math.random()-0.5)*1.2;
+            paper.position.y = (Math.random()-0.5)*0.8;
+            paper.rotation.z = (Math.random()-0.5)*0.5;
+            corkboard.add(paper);
+        }
+        scene.add(corkboard);
+
+        // 6. WINDOW
+        const windowGroup = new THREE.Group();
+        const curtain = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.8, 0.1), materials.fabricBlue);
+        curtain.position.set(0, 2.0, -2.4);
+        scene.add(curtain);
+        const radiator = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 0.15), materials.plasticWhite);
+        radiator.position.set(0, 0.3, -2.4);
+        for(let i=0; i<10; i++) {
+            const slat = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.4, 0.16), new THREE.MeshStandardMaterial({color:0xcccccc}));
+            slat.position.x = -0.6 + (i*0.13);
+            radiator.add(slat);
+        }
+        scene.add(radiator);
+
+        // 7. BED (Corner Left)
+        const bed = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.5, 1.2), materials.woodLight);
+        bed.position.set(-1.5, 0.25, 1.5);
+        scene.add(bed);
+        const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.2, 1.1), materials.plasticWhite);
+        mattress.position.set(0, 0.35, 0);
+        bed.add(mattress);
+
+        // --- EVENT LISTENERS ---
+        document.getElementById('generateBtn').addEventListener('click', () => {
+            const projectName = document.getElementById('projectName').value;
+            const roomType = document.getElementById('roomType').value;
+            alert(`Generate LEGO Build:\nProject: ${projectName}\nRoom Type: ${roomType}\n\n(Backend integration coming soon)`);
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            alert('Export to LDraw:\n(Backend integration coming soon)');
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            camera.position.set(3, 2.5, 3);
+            controls.target.set(0, 1, 0);
+            controls.update();
+        });
+
+        // --- ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            const viewportContainer = document.getElementById('viewportContainer');
+            const width = viewportContainer.clientWidth;
+            const height = viewportContainer.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

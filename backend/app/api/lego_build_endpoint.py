@@ -19,6 +19,7 @@ from app.services.master_builder import MasterBuilder
 from app.services.backboard_lego_memory import BackboardLegoMemory, LegoBuildOrchestrator
 from app.services.lego_objects_database import get_lego_object_by_id
 from app.services.piece_counter import PieceCounter
+from app.services.instruction_manual_generator import InstructionManualGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,11 @@ async def generate_lego_build_from_threejs(
         piece_summary = master_builder.get_piece_count()
         logger.info(f"Step 2: Piece count complete - {piece_summary.total_pieces} total pieces")
         
+        # Generate instruction manual
+        logger.info("Step 2.5: Generating instruction manual")
+        build_guide = InstructionManualGenerator.generate_build_guide(manifest, input_data.project_name)
+        logger.info(f"Generated {build_guide.total_steps} instruction steps")
+        
         # Step 2: Query hardcoded database for component references
         logger.info("Step 3: Querying hardcoded LEGO objects database")
         # This is already done in MasterBuilder._query_hardcoded_database()
@@ -216,6 +222,30 @@ async def generate_lego_build_from_threejs(
         # Step 6: Build response
         logger.info(f"Step 6: Building response for build {build_id}")
         
+        # Convert build guide steps to dict format
+        build_steps = [
+            {
+                "step_number": step.step_number,
+                "layer_z": step.layer_z,
+                "bricks_in_step": step.bricks_in_step,
+                "piece_counts": step.piece_counts,
+                "instructions": step.instructions
+            }
+            for step in build_guide.steps
+        ]
+        
+        # Calculate baseplate size
+        max_x = max([brick["position"]["studs"][0] + brick["dimensions"]["studs"]["width"] for brick in manifest.get("bricks", [])], default=0)
+        max_y = max([brick["position"]["studs"][1] + brick["dimensions"]["studs"]["depth"] for brick in manifest.get("bricks", [])], default=0)
+        baseplate_info = {
+            "size_studs": [max_x + 2, max_y + 2],  # Add 2 studs padding
+            "size_mm": [(max_x + 2) * 8, (max_y + 2) * 8],
+            "part_id": "3811",  # Standard baseplate
+            "lego_type": "Baseplate 32x32",
+            "color_id": 16,  # Dark tan
+            "quantity": 1
+        }
+        
         response = {
             "build_id": build_id,
             "project_name": input_data.project_name,
@@ -243,7 +273,15 @@ async def generate_lego_build_from_threejs(
                 ]
             },
             "estimated_cost": piece_summary.estimated_cost,
-            "recommendations": recommendations
+            "recommendations": recommendations,
+            "instruction_manual": {
+                "total_steps": build_guide.total_steps,
+                "difficulty": build_guide.difficulty,
+                "estimated_time_minutes": build_guide.estimated_time_minutes,
+                "baseplate": baseplate_info,
+                "steps": build_steps,
+                "layer_summary": build_guide.layer_summary
+            }
         }
         
         logger.info(f"Successfully generated build {build_id}: {input_data.project_name}")
