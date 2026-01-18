@@ -104,14 +104,34 @@ export default function InstructionBook({
 
   if (!isOpen) return null;
 
+  // Check if there's no data to display
+  const hasNoData = pieceCount.total_pieces === 0 && manual.total_steps === 0;
+
   const renderPageContent = () => {
     // Cover page
     if (currentPage === 0) {
+      // Show "Nothing to display" if no environment loaded
+      if (hasNoData) {
+        return (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-gradient-to-b from-gray-500 to-gray-600 text-white rounded-r-lg">
+            <div className="text-6xl mb-4">📭</div>
+            <h1 className="text-2xl font-bold mb-2">Nothing to Display</h1>
+            <p className="text-md opacity-90 mb-6">No environment has been loaded yet.</p>
+            <p className="text-sm opacity-75">Upload or create an environment to see<br/>your LEGO build instructions here.</p>
+          </div>
+        );
+      }
+
       return (
         <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-gradient-to-b from-red-600 to-red-700 text-white rounded-r-lg">
           <div className="text-6xl mb-4">🧱</div>
           <h1 className="text-3xl font-bold mb-2">{projectName}</h1>
           <p className="text-lg opacity-90 mb-6">LEGO Build Instructions</p>
+          
+          {/* LEGO Count Summary - First Page */}
+          <div className="w-full mb-4">
+            <p className="text-sm uppercase tracking-wider opacity-75 mb-2">Parts Summary</p>
+          </div>
           
           <div className="grid grid-cols-2 gap-4 text-sm bg-white/10 rounded-lg p-4 backdrop-blur">
             <div>
