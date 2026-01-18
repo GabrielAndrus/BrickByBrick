@@ -1,0 +1,12 @@
+{
+  "voxelization": {
+    "voxel_count": 8608,
+    "status": "passed"
+  },
+  "lego_generation": {
+    "status": "failed"
+  },
+  "complete_pipeline": {
+    "status": "failed"
+  }
+}

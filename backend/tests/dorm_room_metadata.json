@@ -1,0 +1,25 @@
+{
+  "source": "Three.js Dorm Room Scene",
+  "voxel_count": 8608,
+  "voxel_resolution": "0.15m (15cm)",
+  "color_count": 11,
+  "colors": {
+    "#555555": 2911,
+    "#fdfdfd": 4225,
+    "#eebb99": 289,
+    "#aa5555": 177,
+    "#111111": 93,
+    "#eeeeee": 371,
+    "#334488": 356,
+    "#333333": 149,
+    "#999999": 15,
+    "#ffcc00": 7,
+    "#ff6600": 15
+  },
+  "pipeline_status": {
+    "voxel_extraction": "\u2705 COMPLETE",
+    "lego_generation": "\u23f3 IN PROGRESS",
+    "backboard_persistence": "\u23f3 IN PROGRESS",
+    "recommendations": "\u23f3 IN PROGRESS"
+  }
+}

@@ -84,19 +84,34 @@ async function loadLDrawPart(partId: string): Promise<{
   material: THREE.Material | THREE.Material[]; 
   boundingBox: THREE.Box3;
 }> {
-  // Dynamically import LDrawLoader to avoid SSR issues
+  // Dynamically import LDrawLoader and conditional line material to avoid SSR issues
   const { LDrawLoader } = await import('three/examples/jsm/loaders/LDrawLoader.js');
+  const { LDrawConditionalLineMaterial } = await import('three/examples/jsm/materials/LDrawConditionalLineMaterial.js');
   
   const loader = new LDrawLoader();
-  loader.setPartsLibraryPath(LDrawBaseURL);
+  
+  // Configuration: High-quality parts library from gkjohnson/ldraw-parts-library
+  const libraryPath = 'https://raw.githubusercontent.com/gkjohnson/ldraw-parts-library/master/complete/ldraw/';
+  loader.setPartsLibraryPath(libraryPath);
+  
+  // Preload materials for realism
+  try {
+    await loader.preloadMaterials(`${libraryPath}LDConfig.ldr`);
+  } catch (e) {
+    console.warn('Could not preload LDConfig.ldr:', e);
+  }
   
   // Enable conditional lines for professional 'instruction manual' black outlines
-  // LDrawLoader handles conditionalLines internally when processing LDraw files
+  // This creates the characteristic LEGO instruction manual look with black edge lines
+  loader.setConditionalLineMaterial(LDrawConditionalLineMaterial);
+  
+  // Enable smooth normals for realistic stud and curved piece rendering
+  loader.smoothNormals = true;
   
   // LDraw part files are in the parts/ subdirectory
   // e.g., "3004" becomes "parts/3004.dat", "3001" becomes "parts/3001.dat"
   const partFileName = `${partId}.dat`;
-  const partUrl = `${LDrawBaseURL}parts/${partFileName}`;
+  const partUrl = `${libraryPath}parts/${partFileName}`;
   
   return new Promise((resolve, reject) => {
     loader.load(
@@ -392,7 +407,9 @@ export function LegoUniverse({ manifest, showScenery = true, wireframeScenery = 
   }, [isLoading, uniquePartIds, bricksByPartId]);
 
   return (
-    <group>
+    <group rotation-x={Math.PI}>
+      {/* LDraw uses Y-down coordinate system, so we rotate 180° around X-axis to match Three.js Y-up */}
+      
       {/* Render all InstancedMeshes */}
       {uniquePartIds.map((partId) => {
         const instancedMesh = instancedMeshesRef.current.get(partId);

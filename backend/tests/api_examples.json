@@ -1,0 +1,40 @@
+{
+  "endpoint_1": {
+    "method": "GET",
+    "path": "/api/lego/sample-dorm-room/voxels",
+    "description": "Get voxels for sample dorm room",
+    "curl": "curl -X GET http://localhost:8000/api/lego/sample-dorm-room/voxels"
+  },
+  "endpoint_2": {
+    "method": "POST",
+    "path": "/api/lego/sample-dorm-room/process",
+    "description": "Process sample dorm room through pipeline",
+    "curl": "curl -X POST http://localhost:8000/api/lego/sample-dorm-room/process"
+  },
+  "endpoint_3": {
+    "method": "POST",
+    "path": "/api/lego/threejs-to-backboard",
+    "description": "Full pipeline with custom Three.js scene",
+    "example_body": {
+      "objects": [
+        {
+          "type": "BoxGeometry",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "dimensions": {
+            "width": 1,
+            "height": 2,
+            "depth": 1
+          },
+          "color": "0x888888"
+        }
+      ],
+      "project_name": "my-room",
+      "room_type": "bedroom",
+      "resolution": 0.15
+    }
+  }
+}

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from app.services.master_builder import MasterBuilder
+from app.api.lego_build_endpoint import router as lego_build_router
 
 # Optional Backboard import
 try:
