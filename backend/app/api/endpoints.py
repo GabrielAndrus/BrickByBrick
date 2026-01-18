@@ -1,8 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from app.services.master_builder import MasterBuilder
 from app.api.lego_build_endpoint import router as lego_build_router
+import tempfile
+import os
 
 # Optional Backboard import
 try:
@@ -12,7 +15,7 @@ except ImportError:
     BackboardService = None
     BACKBOARD_AVAILABLE = False
 
-router = APIRouter()
+router = APIRouter(prefix="/api", tags=["API"])
 
 
 class VoxelInput(BaseModel):
@@ -34,6 +37,43 @@ async def test_endpoint():
     Test endpoint
     """
     return {"message": "API endpoints are working"}
+
+
+@router.post("/upload-video")
+async def upload_video(file: UploadFile = File(...)):
+    """
+    Upload a video file for processing.
+    
+    Accepts video files and returns a success message with file info.
+    For demo purposes, this endpoint accepts the video and returns immediately.
+    """
+    try:
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith('video/'):
+            raise HTTPException(status_code=400, detail="File must be a video")
+        
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        # Get file size
+        file_size = len(content)
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Video uploaded successfully",
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": file_size,
+            "temp_path": tmp_path
+        })
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error uploading video: {str(e)}")
 
 
 @router.post("/master-builder/process")

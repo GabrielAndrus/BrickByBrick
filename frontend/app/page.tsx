@@ -1,7 +1,7 @@
-'use client';
+'use client'
 
-import { useEffect, useRef, useState } from 'react';
-import InstructionBook from './components/InstructionBook';
+import { useEffect, useRef, useState } from 'react'
+import InstructionBook from './components/InstructionBook'
 
 // Demo data for instruction book (simulating loaded environment)
 const demoManualData = {
@@ -70,7 +70,7 @@ const demoManualData = {
     3: "Upper walls", 
     4: "Roof"
   }
-};
+}
 
 const demoPieceCount = {
   total_pieces: 47,
@@ -81,100 +81,105 @@ const demoPieceCount = {
     { part_id: "3004", color_id: 15, quantity: 8, piece_name: "Brick 1x2" },
     { part_id: "3068", color_id: 7, quantity: 6, piece_name: "Tile 2x2" },
   ]
-};
+}
 
 export default function Home() {
-  const brickContainerRef = useRef<HTMLDivElement>(null);
-  const [showInstructionBook, setShowInstructionBook] = useState(false);
-  const [hasEnvironment, setHasEnvironment] = useState(false); // Set to true when environment is loaded
+  const brickContainerRef = useRef<HTMLDivElement>(null)
+  const [showInstructionBook, setShowInstructionBook] = useState(false)
+  const [hasEnvironment, setHasEnvironment] = useState(false) // Set to true when environment is loaded
+  const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [videoPreview, setVideoPreview] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<string>('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     // Dynamically import Three.js only on client side
     const initThreeJS = async () => {
-      if (!brickContainerRef.current) return;
+      if (!brickContainerRef.current) return
       
-      const THREE = await import('three');
-      const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js');
+      const THREE = await import('three')
+      const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js')
 
-      const container = brickContainerRef.current;
-      const width = container.clientWidth;
-      const height = container.clientHeight;
+      const container = brickContainerRef.current
+      const width = container.clientWidth
+      const height = container.clientHeight
 
       // Scene setup
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xe4e4e4);
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color(0xe4e4e4)
 
-      const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-      camera.position.set(4, 3, 5);
+      const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000)
+      camera.position.set(4, 3, 5)
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.shadowMap.enabled = true;
-      renderer.domElement.style.display = 'block';
-      renderer.domElement.style.width = '100%';
-      renderer.domElement.style.height = '100%';
-      container.appendChild(renderer.domElement);
+      const renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer.setSize(width, height)
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      renderer.shadowMap.enabled = true
+      renderer.domElement.style.display = 'block'
+      renderer.domElement.style.width = '100%'
+      renderer.domElement.style.height = '100%'
+      container.appendChild(renderer.domElement)
 
       // Controls
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 2;
-      controls.target.set(0, 1, 0);
+      const controls = new OrbitControls(camera, renderer.domElement)
+      controls.enableDamping = true
+      controls.autoRotate = true
+      controls.autoRotateSpeed = 2
+      controls.target.set(0, 1, 0)
 
       // Lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-      scene.add(ambientLight);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+      scene.add(ambientLight)
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      directionalLight.position.set(5, 10, 5);
-      directionalLight.castShadow = true;
-      scene.add(directionalLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+      directionalLight.position.set(5, 10, 5)
+      directionalLight.castShadow = true
+      scene.add(directionalLight)
 
       // Create text texture for brick faces
       const createTextTexture = (text: string, bgColor: string) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 256;
-        const ctx = canvas.getContext('2d')!;
+        const canvas = document.createElement('canvas')
+        canvas.width = 512
+        canvas.height = 256
+        const ctx = canvas.getContext('2d')!
         
         // Background
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = bgColor
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
         
         // Text - using Montserrat font (same as site)
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '800 72px Montserrat, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        ctx.fillStyle = '#ffffff'
+        ctx.font = '800 72px Montserrat, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2)
         
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        return texture;
-      };
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.needsUpdate = true
+        return texture
+      }
 
       // LEGO Brick creation function with text
       const createLegoBrick = (color: number, colorHex: string, width: number, depth: number, y: number, text: string) => {
-        const group = new THREE.Group();
+        const group = new THREE.Group()
         
         // Main brick body
-        const brickHeight = 0.96;
-        const geometry = new THREE.BoxGeometry(width * 0.8, brickHeight, depth * 0.8);
+        const brickHeight = 0.96
+        const geometry = new THREE.BoxGeometry(width * 0.8, brickHeight, depth * 0.8)
         
         // Create materials array for each face (right, left, top, bottom, front, back)
-        const textTexture = createTextTexture(text, colorHex);
+        const textTexture = createTextTexture(text, colorHex)
         const baseMaterial = new THREE.MeshStandardMaterial({ 
           color, 
           roughness: 0.3,
           metalness: 0.1
-        });
+        })
         const textMaterial = new THREE.MeshStandardMaterial({ 
           map: textTexture,
           roughness: 0.3,
           metalness: 0.1
-        });
+        })
         
         // Materials: [+X, -X, +Y, -Y, +Z (front), -Z (back)]
         const materials = [
@@ -184,83 +189,137 @@ export default function Home() {
           baseMaterial, // bottom
           textMaterial, // front - show text
           baseMaterial, // back
-        ];
+        ]
         
-        const brick = new THREE.Mesh(geometry, materials);
-        brick.castShadow = true;
-        brick.receiveShadow = true;
-        group.add(brick);
+        const brick = new THREE.Mesh(geometry, materials)
+        brick.castShadow = true
+        brick.receiveShadow = true
+        group.add(brick)
 
         // Add studs on top
-        const studGeometry = new THREE.CylinderGeometry(0.24, 0.24, 0.17, 16);
+        const studGeometry = new THREE.CylinderGeometry(0.24, 0.24, 0.17, 16)
         const studMaterial = new THREE.MeshStandardMaterial({ 
           color, 
           roughness: 0.3,
           metalness: 0.1
-        });
+        })
         
         for (let x = 0; x < width; x++) {
           for (let z = 0; z < depth; z++) {
-            const stud = new THREE.Mesh(studGeometry, studMaterial);
+            const stud = new THREE.Mesh(studGeometry, studMaterial)
             stud.position.set(
               (x - (width - 1) / 2) * 0.8,
               brickHeight / 2 + 0.085,
               (z - (depth - 1) / 2) * 0.8
-            );
-            stud.castShadow = true;
-            group.add(stud);
+            )
+            stud.castShadow = true
+            group.add(stud)
           }
         }
 
-        group.position.y = y;
-        return group;
-      };
+        group.position.y = y
+        return group
+      }
 
       // Create stacked bricks - "PIECE BY PIECE"
-      const redBrick = createLegoBrick(0xc91a09, '#c91a09', 4, 2, 0, 'PIECE');
-      redBrick.position.x = -0.4;
-      scene.add(redBrick);
+      const redBrick = createLegoBrick(0xc91a09, '#c91a09', 4, 2, 0, 'PIECE')
+      redBrick.position.x = -0.4
+      scene.add(redBrick)
 
-      const blueBrick = createLegoBrick(0x0055bf, '#0055bf', 4, 2, 1.13, 'BY');
-      blueBrick.position.x = 0.2;
-      scene.add(blueBrick);
+      const blueBrick = createLegoBrick(0x0055bf, '#0055bf', 4, 2, 1.13, 'BY')
+      blueBrick.position.x = 0.2
+      scene.add(blueBrick)
 
-      const yellowBrick = createLegoBrick(0xf2cd37, '#f2cd37', 4, 2, 2.26, 'PIECE');
-      yellowBrick.position.x = 0.6;
-      scene.add(yellowBrick);
+      const yellowBrick = createLegoBrick(0xf2cd37, '#f2cd37', 4, 2, 2.26, 'PIECE')
+      yellowBrick.position.x = 0.6
+      scene.add(yellowBrick)
 
       // Animation loop
       const animate = () => {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      };
-      animate();
+        requestAnimationFrame(animate)
+        controls.update()
+        renderer.render(scene, camera)
+      }
+      animate()
 
       // Handle resize
       const handleResize = () => {
-        if (!container) return;
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-        renderer.setSize(w, h, false);
-      };
-      window.addEventListener('resize', handleResize);
+        if (!container) return
+        const w = container.clientWidth
+        const h = container.clientHeight
+        camera.aspect = w / h
+        camera.updateProjectionMatrix()
+        renderer.setSize(w, h, false)
+      }
+      window.addEventListener('resize', handleResize)
       
       // Initial resize to ensure proper fit
-      handleResize();
+      handleResize()
 
       // Cleanup
       return () => {
-        window.removeEventListener('resize', handleResize);
-        container.removeChild(renderer.domElement);
-        renderer.dispose();
-      };
-    };
+        window.removeEventListener('resize', handleResize)
+        if (container && renderer.domElement.parentNode === container) {
+          container.removeChild(renderer.domElement)
+        }
+        renderer.dispose()
+      }
+    }
 
-    initThreeJS();
-  }, []);
+    initThreeJS()
+  }, [])
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('video/')) {
+      setVideoFile(file)
+      const url = URL.createObjectURL(file)
+      setVideoPreview(url)
+      setUploadStatus('')
+    } else {
+      setUploadStatus('Please select a valid video file')
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!videoFile) return
+
+    setUploading(true)
+    setUploadStatus('Uploading video...')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', videoFile)
+
+      const response = await fetch('http://127.0.0.1:8000/api/upload-video', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Upload failed')
+      }
+
+      const data = await response.json()
+      setUploadStatus(`✅ ${data.message}`)
+    } catch (error) {
+      setUploadStatus(`❌ Error: ${error instanceof Error ? error.message : 'Upload failed'}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleRemove = () => {
+    if (videoPreview) {
+      URL.revokeObjectURL(videoPreview)
+    }
+    setVideoFile(null)
+    setVideoPreview(null)
+    setUploadStatus('')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
   return (
     <>
@@ -307,9 +366,51 @@ export default function Home() {
           <div className="env-wrapper">
             <div className="panel-header header-bg-red">Environment</div>
             <div className="panel panel-content">
-              <div className="canvas-placeholder">
-                this part is just<br/>whatever the 3d<br/>model is
-              </div>
+              {!videoPreview ? (
+                <div className="video-upload-area">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/*"
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                    id="video-upload"
+                  />
+                  <label htmlFor="video-upload" className="upload-label">
+                    <i className="fa-solid fa-cloud-arrow-up" style={{ fontSize: '48px', marginBottom: '15px', color: '#888' }}></i>
+                    <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '8px' }}>Upload Video</div>
+                    <div style={{ fontSize: '12px', color: '#666' }}>Click to select a video file</div>
+                  </label>
+                </div>
+              ) : (
+                <div className="video-preview-container">
+                  <video
+                    src={videoPreview}
+                    controls
+                    style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto' }}
+                  />
+                  <div className="video-controls-overlay">
+                    <button
+                      onClick={handleUpload}
+                      disabled={uploading}
+                      className="upload-btn"
+                    >
+                      {uploading ? 'Uploading...' : 'Process Video'}
+                    </button>
+                    <button
+                      onClick={handleRemove}
+                      className="remove-btn"
+                    >
+                      <i className="fa-solid fa-times"></i>
+                    </button>
+                  </div>
+                  {uploadStatus && (
+                    <div className={`upload-status ${uploadStatus.includes('✅') ? 'success' : 'error'}`}>
+                      {uploadStatus}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="zoom-controls">
                 <div className="zoom-btn">
                   <i className="fa-solid fa-expand"></i>
