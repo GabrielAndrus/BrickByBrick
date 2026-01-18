@@ -2,99 +2,94 @@
 
 import { useEffect, useRef, useState } from 'react'
 import InstructionBook from './components/InstructionBook'
+import { 
+  processManifestWithBackboard, 
+  loadManifestFromFile,
+  type InstructionManual,
+  type PieceCount,
+  type LegoMemoryEntry 
+} from '../lib/legoManualGenerator'
 
-// Demo data for instruction book (simulating loaded environment)
-const demoManualData = {
-  total_steps: 5,
-  difficulty: "Medium",
-  estimated_time_minutes: 25,
-  baseplate: {
-    size_studs: [32, 32],
-    lego_type: "Baseplate 32x32"
-  },
-  steps: [
-    {
-      step_number: 1,
-      layer_z: 0,
-      bricks_in_step: [
-        { part_id: "3001", position: { studs: [0, 0, 0] }, rotation: 0 },
-        { part_id: "3001", position: { studs: [4, 0, 0] }, rotation: 0 },
-        { part_id: "3003", position: { studs: [8, 0, 0] }, rotation: 0 },
-      ],
-      piece_counts: { "3001": 2, "3003": 1 } as Record<string, number>,
-      instructions: "Start by placing the foundation bricks"
-    },
-    {
-      step_number: 2,
-      layer_z: 1,
-      bricks_in_step: [
-        { part_id: "3001", position: { studs: [0, 0, 1] }, rotation: 0 },
-        { part_id: "3004", position: { studs: [4, 0, 1] }, rotation: 90 },
-      ],
-      piece_counts: { "3001": 1, "3004": 1 } as Record<string, number>,
-      instructions: "Build the walls"
-    },
-    {
-      step_number: 3,
-      layer_z: 2,
-      bricks_in_step: [
-        { part_id: "3003", position: { studs: [0, 0, 2] }, rotation: 0 },
-        { part_id: "3003", position: { studs: [2, 0, 2] }, rotation: 0 },
-      ],
-      piece_counts: { "3003": 2 } as Record<string, number>,
-      instructions: "Add support structure"
-    },
-    {
-      step_number: 4,
-      layer_z: 3,
-      bricks_in_step: [
-        { part_id: "3001", position: { studs: [0, 0, 3] }, rotation: 0 },
-      ],
-      piece_counts: { "3001": 1 } as Record<string, number>,
-      instructions: "Continue walls upward"
-    },
-    {
-      step_number: 5,
-      layer_z: 4,
-      bricks_in_step: [
-        { part_id: "3068", position: { studs: [0, 0, 4] }, rotation: 0 },
-      ],
-      piece_counts: { "3068": 1 } as Record<string, number>,
-      instructions: "Add the roof tiles"
-    }
-  ],
-  layer_summary: {
-    0: "Foundation layer",
-    1: "First floor walls",
-    2: "Support beams",
-    3: "Upper walls", 
-    4: "Roof"
-  }
+// Default empty data for when no build is loaded
+const emptyManualData: InstructionManual = {
+  total_steps: 0,
+  difficulty: "N/A",
+  estimated_time_minutes: 0,
+  steps: [],
+  layer_summary: {}
 }
 
-const demoPieceCount = {
-  total_pieces: 47,
-  total_unique: 4,
-  breakdown: [
-    { part_id: "3001", color_id: 5, quantity: 18, piece_name: "Brick 2x4" },
-    { part_id: "3003", color_id: 1, quantity: 15, piece_name: "Brick 2x2" },
-    { part_id: "3004", color_id: 15, quantity: 8, piece_name: "Brick 1x2" },
-    { part_id: "3068", color_id: 7, quantity: 6, piece_name: "Tile 2x2" },
-  ]
+const emptyPieceCount: PieceCount = {
+  total_pieces: 0,
+  total_unique: 0,
+  breakdown: [],
+  by_category: {},
+  by_color: {},
+  estimated_cost: 0
 }
 
 export default function Home() {
   const brickContainerRef = useRef<HTMLDivElement>(null)
   const envContainerRef = useRef<HTMLDivElement>(null)
+  const envPanelRef = useRef<HTMLDivElement>(null)
   const [showInstructionBook, setShowInstructionBook] = useState(false)
+  const [showNothingModal, setShowNothingModal] = useState(false)
   const [hasEnvironment, setHasEnvironment] = useState(false) // Set to true when environment is loaded
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [uploadStatus, setUploadStatus] = useState<string>('')
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [showThreeJS, setShowThreeJS] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const threeJSRendererRef = useRef<any>(null)
+  
+  // LEGO Build Data (from Backboard + Greedy Algorithm)
+  const [buildData, setBuildData] = useState<LegoMemoryEntry | null>(null)
+  const [manualData, setManualData] = useState<InstructionManual>(emptyManualData)
+  const [pieceCount, setPieceCount] = useState<PieceCount>(emptyPieceCount)
+  const [projectName, setProjectName] = useState<string>("My Dorm Room")
+  
+  // Confirmation modal for removing environment
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
+
+  // Fullscreen toggle handler
+  const toggleFullscreen = () => {
+    if (!envPanelRef.current) return
+    
+    if (!isFullscreen) {
+      // Enter fullscreen
+      if (envPanelRef.current.requestFullscreen) {
+        envPanelRef.current.requestFullscreen()
+      } else if ((envPanelRef.current as any).webkitRequestFullscreen) {
+        (envPanelRef.current as any).webkitRequestFullscreen()
+      }
+      setIsFullscreen(true)
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+      } else if ((document as any).webkitExitFullscreen) {
+        (document as any).webkitExitFullscreen()
+      }
+      setIsFullscreen(false)
+    }
+  }
+
+  // Listen for fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
 
   useEffect(() => {
     // Dynamically import Three.js only on client side
@@ -326,7 +321,7 @@ export default function Home() {
       setVideoFile(file)
       const url = URL.createObjectURL(file)
       setVideoPreview(url)
-      setUploadStatus('')
+      setUploadStatus(null)
       console.log('Video preview set')
     } else {
       setUploadStatus('Please select a valid video file')
@@ -643,19 +638,64 @@ export default function Home() {
     setUploading(true)
     setUploadStatus('Processing video...')
 
-    // Simulate processing (hardcoded, no backend)
-    setTimeout(() => {
-      setUploadStatus('✅ Video processed successfully')
+    try {
+      // Step 1: Simulate video processing delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      setUploadStatus('Analyzing room structure...')
       
-      // After processing, show Three.js scene
+      // Step 2: Load the hardcoded manifest (simulating backend processing)
+      await new Promise(resolve => setTimeout(resolve, 800))
+      setUploadStatus('Applying greedy algorithm...')
+      
+      const manifest = await loadManifestFromFile('/bedroom_lego_manifest.json')
+      console.log(`[Backboard] Loaded manifest with ${manifest.total_bricks} bricks`)
+      
+      // Step 3: Process manifest with Backboard memory integration
+      await new Promise(resolve => setTimeout(resolve, 600))
+      setUploadStatus('Generating instruction manual...')
+      
+      const buildEntry = processManifestWithBackboard(
+        manifest,
+        projectName,
+        'dorm_room'
+      )
+      
+      // Step 4: Update state with processed data
+      setBuildData(buildEntry)
+      setManualData(buildEntry.instruction_manual)
+      setPieceCount(buildEntry.piece_count)
+      setHasEnvironment(true)
+      
+      console.log(`[Backboard] Build ${buildEntry.build_id} saved with:`)
+      console.log(`  - ${buildEntry.piece_count.total_pieces} total pieces`)
+      console.log(`  - ${buildEntry.piece_count.total_unique} unique types`)
+      console.log(`  - ${buildEntry.instruction_manual.total_steps} build steps`)
+      console.log(`  - Difficulty: ${buildEntry.instruction_manual.difficulty}`)
+      console.log(`  - Est. time: ${buildEntry.instruction_manual.estimated_time_minutes} minutes`)
+      
+      setUploadStatus('✅ LEGO build generated successfully!')
+      
+      // Show Three.js scene after a brief delay
       setTimeout(() => {
         setShowThreeJS(true)
         setUploading(false)
-      }, 1000)
-    }, 1500)
+      }, 500)
+      
+    } catch (error) {
+      console.error('Error processing video:', error)
+      setUploadStatus(`❌ Error: ${error instanceof Error ? error.message : 'Processing failed'}`)
+      setUploading(false)
+    }
   }
 
+  // Show confirmation before removing
+  const confirmRemove = () => {
+    setShowRemoveConfirm(true)
+  }
+
+  // Actually remove the environment/video
   const handleRemove = () => {
+    setShowRemoveConfirm(false)
     if (videoPreview) {
       URL.revokeObjectURL(videoPreview)
     }
@@ -668,6 +708,10 @@ export default function Home() {
     setUploadStatus('')
     setShowThreeJS(false)
     setHasEnvironment(false) // Reset environment state
+    // Reset LEGO build data
+    setBuildData(null)
+    setManualData(emptyManualData)
+    setPieceCount(emptyPieceCount)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -715,7 +759,10 @@ export default function Home() {
 
       <div className="builder-container">
         <div className="builder-top-row">
-          <div className="env-wrapper">
+          <div 
+            className={`env-wrapper ${isFullscreen ? 'fullscreen-mode' : ''}`}
+            ref={envPanelRef}
+          >
             <div className="panel-header header-bg-red">Environment</div>
             <div className="panel panel-content">
               {!videoPreview && !showThreeJS ? (
@@ -739,8 +786,9 @@ export default function Home() {
                   <div ref={envContainerRef} style={{ width: '100%', height: '100%', minHeight: '400px', position: 'relative' }}></div>
                   <div className="video-controls-overlay">
                     <button
-                      onClick={handleRemove}
+                      onClick={confirmRemove}
                       className="remove-btn"
+                      title="Remove environment"
                     >
                       <i className="fa-solid fa-times"></i>
                     </button>
@@ -749,7 +797,7 @@ export default function Home() {
               ) : (
                 <div className="video-preview-container">
                   <video
-                    src={videoPreview}
+                    src={videoPreview || undefined}
                     controls
                     style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
                   />
@@ -771,10 +819,11 @@ export default function Home() {
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
-                        handleRemove()
+                        confirmRemove()
                       }}
                       className="remove-btn"
                       type="button"
+                      title="Remove video"
                     >
                       <i className="fa-solid fa-times"></i>
                     </button>
@@ -787,23 +836,36 @@ export default function Home() {
                 </div>
               )}
               <div className="zoom-controls">
-                <div className="zoom-btn">
-                  <i className="fa-solid fa-expand"></i>
-                </div>
-                <div className="zoom-btn">
+                <button 
+                  className="zoom-btn" 
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                >
+                  <i className={`fa-solid ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}></i>
+                </button>
+                <button 
+                  className="zoom-btn"
+                  onClick={() => {
+                    if (threeJSRendererRef.current?.zoomIn) {
+                      threeJSRendererRef.current.zoomIn()
+                    }
+                  }}
+                  title="Zoom In"
+                >
                   <i className="fa-solid fa-plus"></i>
-                </div>
-                <div className="zoom-btn">
+                </button>
+                <button 
+                  className="zoom-btn"
+                  onClick={() => {
+                    if (threeJSRendererRef.current?.zoomOut) {
+                      threeJSRendererRef.current.zoomOut()
+                    }
+                  }}
+                  title="Zoom Out"
+                >
                   <i className="fa-solid fa-minus"></i>
-                </div>
+                </button>
               </div>
-              <button 
-                className="view-details-btn"
-                onClick={() => setShowInstructionBook(true)}
-              >
-                <i className="fa-solid fa-book"></i>
-                View Details
-              </button>
             </div>
           </div>
 
@@ -825,7 +887,7 @@ export default function Home() {
 
         <div className="full-set-row">
           <div className="panel-header header-bg-orange">Full Set</div>
-          <div className="box-art-container">
+          <div className="box-art-container" style={{ position: 'relative' }}>
             <div className="lego-box-perspective">
               <div className="box-spine">
                 <div className="spine-logo">B<span>B</span></div>
@@ -841,26 +903,88 @@ export default function Home() {
                 <div className="box-front-text">3d model of the<br/>environment +<br/>objects</div>
               </div>
             </div>
+            <button 
+              className="view-details-btn"
+              onClick={() => {
+                if (hasEnvironment) {
+                  setShowInstructionBook(true)
+                } else {
+                  setShowNothingModal(true)
+                }
+              }}
+            >
+              <i className="fa-solid fa-book"></i>
+              View Details
+            </button>
           </div>
         </div>
       </div>
 
+      {/* Nothing to Display Modal */}
+      {showNothingModal && (
+        <div 
+          className="nothing-modal-overlay"
+          onClick={() => setShowNothingModal(false)}
+        >
+          <div 
+            className="nothing-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              className="nothing-modal-close"
+              onClick={() => setShowNothingModal(false)}
+            >
+              ✕
+            </button>
+            <div className="nothing-modal-icon">🧱</div>
+            <h2 className="nothing-modal-title">No Build Available</h2>
+            <p className="nothing-modal-text">No environment has been loaded yet.</p>
+            <p className="nothing-modal-subtext">
+              Upload or create an environment to see your LEGO build instructions here.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Confirmation Modal */}
+      {showRemoveConfirm && (
+        <div 
+          className="confirm-modal-overlay"
+          onClick={() => setShowRemoveConfirm(false)}
+        >
+          <div 
+            className="confirm-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="confirm-modal-icon">⚠️</div>
+            <h2 className="confirm-modal-title">Are you sure?</h2>
+            <p className="confirm-modal-text">
+              This will remove your current environment and all generated LEGO build data.
+            </p>
+            <div className="confirm-modal-buttons">
+              <button 
+                className="confirm-btn confirm-btn-cancel"
+                onClick={() => setShowRemoveConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="confirm-btn confirm-btn-remove"
+                onClick={handleRemove}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Instruction Book Modal */}
       {showInstructionBook && (
         <InstructionBook
-          projectName={hasEnvironment ? "My Room Build" : "No Environment"}
-          manual={hasEnvironment ? demoManualData : {
-            total_steps: 0,
-            difficulty: "N/A",
-            estimated_time_minutes: 0,
-            steps: [],
-            layer_summary: {}
-          }}
-          pieceCount={hasEnvironment ? demoPieceCount : {
-            total_pieces: 0,
-            total_unique: 0,
-            breakdown: []
-          }}
+          projectName={projectName}
+          manual={manualData}
+          pieceCount={pieceCount}
           isOpen={showInstructionBook}
           onClose={() => setShowInstructionBook(false)}
         />
