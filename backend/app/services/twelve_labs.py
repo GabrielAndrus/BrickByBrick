@@ -195,41 +195,58 @@ class TwelveLabsAPI:
         raise Exception(f"Analysis failed after {max_retries} attempts")
     
     async def get_object_description(self, video_id: str) -> str:
-        """Get detailed scene description for 3D reconstruction"""
-        prompt = """You are a 3D environment designer. Analyze this video and provide a detailed spatial description of the scene for generating a 3D model.
+        """Get extremely detailed scene description for 3D reconstruction"""
+        prompt = """You are a helpful 3D environment designer analyzing a video. Please watch the video and describe the scene in detail to help recreate it in 3D.
 
-Describe in detail:
+Please describe what you can observe in the following structure:
 
 1. **ROOM/SPACE LAYOUT**
-   - Room shape and approximate dimensions (length x width x height in meters)
-   - Floor type and material (wood, tile, carpet, concrete)
-   - Wall colors and materials
-   - Ceiling type (flat, vaulted, exposed beams)
+   - Room dimensions (estimated): length x width x height in meters if visible
+   - Floor: material type (wood, tile, carpet, etc.), color description, texture
+   - Walls: describe each wall - color, material if visible, any decorations, windows, or features
+   - Ceiling: type (flat, vaulted, etc.), color, any fixtures or features
 
-2. **MAJOR OBJECTS & FURNITURE**
-   - List each object with position (front-left, center, back-right, etc.)
-   - Approximate size of each object (width x depth x height)
-   - Material and color (use hex codes like #FFFFFF)
-   - Shape description (rectangular, cylindrical, organic)
+2. **OBJECTS & FURNITURE**
+   For each visible object, please describe:
+   - Name/Type: what the object is (e.g., "desk", "chair", "lamp")
+   - Position: where it is located in the room (relative to walls or other objects)
+   - Size: approximate dimensions if you can estimate
+   - Shape: basic geometry (rectangular, cylindrical, etc.)
+   - Color: color description or hex code if identifiable
+   - Material: what it appears to be made of (wood, metal, fabric, etc.)
+   - Texture: surface appearance (smooth, rough, glossy, matte)
+   - Additional details: any notable features
 
 3. **LIGHTING**
-   - Light sources (windows, lamps, overhead lights)
-   - Direction and intensity of light
-   - Shadows and ambient lighting
+   - Light sources: describe visible lights (windows, lamps, overhead lights)
+   - Light direction: where light is coming from
+   - Brightness: overall lighting level of the room
 
 4. **SPATIAL RELATIONSHIPS**
-   - How objects relate to each other (next to, behind, on top of)
-   - Distances between key objects
-   - Walkable areas and blocked spaces
+   - Object positions: describe where objects are relative to each other
+   - Distances: approximate spacing between key objects if visible
+   - Layout: describe the overall arrangement of furniture and objects
 
 5. **TEXTURES & MATERIALS**
-   - Surface finishes (glossy, matte, rough, smooth)
-   - Patterns (striped, checkered, solid)
-   - Transparency (glass, translucent materials)
+   - Surface finishes: describe visible textures and finishes
+   - Materials: what surfaces appear to be made of
+   - Patterns: any visible patterns (flooring patterns, fabric patterns, etc.)
 
-Format your response so a 3D modeling AI (like Gemini) can recreate this scene using primitives (boxes, cylinders, planes) with accurate positions, scales, and materials.
+6. **ADDITIONAL DETAILS**
+   - Decorative elements: artwork, plants, rugs, etc.
+   - Functional elements: windows, doors, outlets if visible
+   - Color scheme: dominant colors in the scene
+   - Style: overall aesthetic or style
 
-Be extremely specific with measurements, positions, and colors."""
+Please include:
+- Estimates or descriptions of sizes and dimensions where possible
+- Color descriptions (specific colors or hex codes if you can identify them)
+- Descriptions of all visible objects and furniture
+- Spatial relationships between objects (what's near what, positions relative to walls)
+- Materials and textures you can observe
+- Lighting information
+
+Be as detailed and specific as you can while staying accurate to what's actually visible in the video."""
         
         return await self.analyze(video_id, prompt)
     

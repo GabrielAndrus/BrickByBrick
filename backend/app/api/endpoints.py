@@ -1,5 +1,11 @@
 """
 API Endpoints for Reality-to-Brick
+
+Full Pipeline:
+1. Upload video 
+2. Extract frames (FFmpeg)
+3. Get scene description (TwelveLabs)
+4. Generate ThreeJS code (Gemini)
 """
 
 import os
@@ -9,6 +15,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from app.services.twelve_labs import get_twelve_labs_api
 from app.services.ffmpeg_processor import get_ffmpeg_processor
+from app.services.gemini_service import get_gemini_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,15 +26,65 @@ async def test_endpoint():
     return {"status": "ok", "message": "API is running"}
 
 
+@router.get("/test-services")
+async def test_services():
+    """Test if TwelveLabs and Gemini are configured"""
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+    
+    results = {
+        "twelvelabs": {
+            "api_key_set": bool(os.getenv("TWELVE_LABS_API_KEY") or os.getenv("TWL_API_KEY")),
+            "index_id_set": bool(os.getenv("TWL_INDEX_ID")),
+        },
+        "gemini": {
+            "api_key_set": bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")),
+        }
+    }
+    
+    # Test TwelveLabs connection
+    try:
+        api = get_twelve_labs_api()
+        results["twelvelabs"]["initialized"] = True
+        results["twelvelabs"]["index_id"] = api.index_id[:8] + "..." if api.index_id else None
+    except Exception as e:
+        results["twelvelabs"]["initialized"] = False
+        results["twelvelabs"]["error"] = str(e)
+    
+    # Test Gemini connection
+    try:
+        gemini = get_gemini_service()
+        results["gemini"]["initialized"] = True
+        results["gemini"]["model"] = str(gemini.model.model_name) if gemini.model else None
+        
+        # List available models
+        try:
+            import google.generativeai as genai
+            available = [m.name.split('/')[-1] for m in genai.list_models() 
+                        if 'generateContent' in m.supported_generation_methods]
+            results["gemini"]["available_models"] = available
+        except Exception as e:
+            results["gemini"]["available_models_error"] = str(e)
+    except Exception as e:
+        results["gemini"]["initialized"] = False
+        results["gemini"]["error"] = str(e)
+    
+    return results
+
+
 @router.post("/process-video")
 async def process_video(file: UploadFile = File(...), num_frames: int = 6):
     """
-    Main endpoint: Upload video, extract frames, get TwelveLabs analysis.
+    Full pipeline: 
+    1. Extract frames (FFmpeg) for display
+    2. Send video to TwelveLabs (get extremely detailed description + frames/angles)
+    3. Send video directly to Gemini (generate ThreeJS from video)
     
     Returns:
     - Extracted frames (base64 images)
-    - Object description from TwelveLabs
-    - View timestamps (front, side, back, top)
+    - Extremely detailed scene description from TwelveLabs
+    - ThreeJS code from Gemini (generated from video)
     """
     allowed = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
     if file.content_type not in allowed:
@@ -53,39 +110,58 @@ async def process_video(file: UploadFile = File(...), num_frames: int = 6):
         frames = frames_result.get("images", [])
         logger.info(f"Extracted {len(frames)} frames")
         
-        # Step 2: Upload to TwelveLabs
-        logger.info("Step 2: Uploading to TwelveLabs...")
+        # Step 2: Try TwelveLabs (optional - may fail if index doesn't support analyze)
+        logger.info("Step 2: Attempting TwelveLabs analysis...")
         api = get_twelve_labs_api()
         
         video_id = None
         description = None
         timestamps = None
+        twelvelabs_success = False
         
         try:
             upload = await api.upload_video(tmp_path)
             video_id = upload.get("video_id")
             task_id = upload.get("task_id")
             
-            # Wait for task completion
+            # Wait for task completion (shorter timeout)
             logger.info("Waiting for indexing...")
-            await api.wait_for_task(task_id, timeout=120)
+            await api.wait_for_task(task_id, timeout=60)
             
-            # Wait for video to be ready for analysis
+            # Wait for video to be ready (shorter timeout)
             logger.info("Waiting for video ready...")
-            await api.wait_for_video_ready(video_id, timeout=120)
+            await api.wait_for_video_ready(video_id, timeout=60)
             
-            # Step 3: Get object description
-            logger.info("Step 3: Getting object description...")
+            # Get scene description
+            logger.info("Step 3: Getting scene description...")
             description = await api.get_object_description(video_id)
             
-            # Step 4: Get view timestamps
+            # Get view timestamps
             logger.info("Step 4: Getting view timestamps...")
             timestamps = await api.get_all_view_timestamps(video_id)
+            twelvelabs_success = True
             
         except Exception as e:
-            logger.error(f"TwelveLabs error: {e}")
-            description = f"Error: {e}"
-            timestamps = {"error": str(e)}
+            logger.warning(f"TwelveLabs failed (will use Gemini only): {e}")
+            description = None  # Let Gemini analyze from images
+            timestamps = None
+        
+        # Step 5: Generate ThreeJS with Gemini (send video directly)
+        logger.info("Step 5: Generating ThreeJS with Gemini from video...")
+        threejs_code = None
+        
+        try:
+            gemini = get_gemini_service()
+            # Send video directly to Gemini, optionally include TwelveLabs description for context
+            scene_desc = description if twelvelabs_success and description else None
+            
+            threejs_code = await gemini.generate_threejs_from_video(
+                video_path=tmp_path,
+                scene_description=scene_desc
+            )
+        except Exception as e:
+            logger.error(f"Gemini error: {e}")
+            threejs_code = f"// Error generating ThreeJS: {e}"
         
         return {
             "status": "success",
@@ -96,8 +172,12 @@ async def process_video(file: UploadFile = File(...), num_frames: int = 6):
                 "images": frames
             },
             "analysis": {
-                "description": description,
-                "timestamps": timestamps
+                "twelvelabs_success": twelvelabs_success,
+                "description": description if description else "TwelveLabs analysis skipped - Gemini analyzing images directly",
+                "timestamps": timestamps if timestamps else {}
+            },
+            "threejs": {
+                "code": threejs_code
             }
         }
         
@@ -113,7 +193,7 @@ async def process_video(file: UploadFile = File(...), num_frames: int = 6):
 
 @router.post("/extract-frames")
 async def extract_frames(file: UploadFile = File(...), num_frames: int = 6):
-    """Extract frames only (no TwelveLabs)"""
+    """Extract frames only (no TwelveLabs or Gemini)"""
     allowed = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm"]
     if file.content_type not in allowed:
         raise HTTPException(400, f"Invalid type. Allowed: {allowed}")
@@ -142,6 +222,22 @@ async def extract_frames(file: UploadFile = File(...), num_frames: int = 6):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+@router.post("/generate-threejs")
+async def generate_threejs_from_description(description: str):
+    """Generate ThreeJS from description only (no images)"""
+    try:
+        gemini = get_gemini_service()
+        code = await gemini.generate_threejs_simple(description)
+        
+        return {
+            "status": "success",
+            "threejs": {"code": code}
+        }
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        raise HTTPException(500, str(e))
 
 
 # Backwards compatibility
