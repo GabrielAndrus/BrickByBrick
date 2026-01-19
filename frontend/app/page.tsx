@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import InstructionBook from './components/InstructionBook'
@@ -12,9 +13,7 @@ import {
   type PieceCount,
   type LegoMemoryEntry 
 } from '../lib/legoManualGenerator'
-import { convertToLegoDesign } from '../lib/geminiLegoConverter'
 import { convertVideoTo3DObject, executeAndAddObject } from '../lib/videoToThreeJS'
-import { buildLegoSceneFromManifest } from '../lib/legoThreeJSBuilder'
 import { buildMemoTransaction } from '../lib/bbCoin'
 
 // Default empty data for when no build is loaded
@@ -116,6 +115,37 @@ const SAMPLE_COINS: CoinEntry[] = [
   },
 ]
 
+function LoadingOverlayInner({
+  isFadingOut,
+  uploading,
+  uploadStatus,
+}: {
+  isFadingOut: boolean
+  uploading: boolean
+  uploadStatus: string | null
+}) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+  return (
+    <div
+      className={`loading-overlay ${!ready ? 'loading-overlay--fade-in' : ''} ${isFadingOut ? 'loading-overlay--fade-out' : ''}`}
+    >
+      <DotLottieReact
+        src="/Comp 1.lottie"
+        loop
+        autoplay
+        style={{ width: 420, height: 420 }}
+      />
+      {uploading && uploadStatus && (
+        <p className="loading-overlay-status">{uploadStatus}</p>
+      )}
+    </div>
+  )
+}
+
 export default function Home() {
   const brickContainerRef = useRef<HTMLDivElement>(null)
   const envContainerRef = useRef<HTMLDivElement>(null)
@@ -129,7 +159,6 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [showThreeJS, setShowThreeJS] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [viewMode, setViewMode] = useState<'scene' | 'lego'>('scene')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const threeJSRendererRef = useRef<any>(null)
   
@@ -143,11 +172,6 @@ export default function Home() {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   
   // LEGO design toggle
-  const [showLegoDesign, setShowLegoDesign] = useState(false)
-  const [legoDesignText, setLegoDesignText] = useState<string>('')
-  const [legoGenerating, setLegoGenerating] = useState(false)
-  const generatedRef = useRef(false)
-  
   // Objects state
   const [objects, setObjects] = useState<Array<{ id: string; name: string; mesh: any; modelAnalysis?: any }>>([])
   const [objectFileInputRef, setObjectFileInputRef] = useState<HTMLInputElement | null>(null)
@@ -168,28 +192,33 @@ export default function Home() {
   const hoverLeaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const coins = SAMPLE_COINS
 
-  // Auto-generate LEGO design when environment is loaded
+  // Initial load: 3 second Lottie splash
+  const [initialLoadDone, setInitialLoadDone] = useState(false)
   useEffect(() => {
-    const generateLegoDesign = async () => {
-      if (generatedRef.current) return // Prevent multiple calls
-      if (hasEnvironment && pieceCount.total_pieces > 0 && !legoDesignText) {
-        generatedRef.current = true
-        setLegoGenerating(true)
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || ''
-        const design = await convertToLegoDesign(
-          pieceCount.total_pieces,
-          pieceCount.breakdown,
-          projectName,
-          apiKey,
-          undefined // No specific model analysis for environment
-        )
-        setLegoDesignText(design)
-        setShowLegoDesign(true)
-        setLegoGenerating(false)
-      }
+    const t = setTimeout(() => setInitialLoadDone(true), 5000)
+    return () => clearTimeout(t)
+  }, [])
+
+  const showLoader = !initialLoadDone || uploading
+  const [isFadingOut, setIsFadingOut] = useState(false)
+  const fadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (showLoader) {
+      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current)
+      fadeTimeoutRef.current = null
+      setIsFadingOut(false)
+    } else {
+      setIsFadingOut(true)
+      fadeTimeoutRef.current = setTimeout(() => {
+        setIsFadingOut(false)
+        fadeTimeoutRef.current = null
+      }, 500)
     }
-    generateLegoDesign()
-  }, [hasEnvironment])
+    return () => { if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current) }
+  }, [showLoader])
+
+  const showOverlay = showLoader || isFadingOut
 
   // Fullscreen toggle handler
   const toggleFullscreen = () => {
@@ -243,20 +272,7 @@ export default function Home() {
 
     const timer = setTimeout(async () => {
       try {
-        if (viewMode === 'lego') {
-          let manifest = buildData?.manifest
-          if (!manifest) {
-            try { manifest = await loadManifestFromFile('/bedroom_lego_manifest.json') } catch (e) {
-              console.warn('No manifest for LEGO view, falling back to scene', e)
-              return initDormRoomThreeJS()
-            }
-          }
-          const res = await buildLegoSceneFromManifest(container, manifest)
-          threeJSRendererRef.current = { renderer: res.renderer, scene: res.scene, cleanup: res.cleanup }
-          console.log('LEGO Three.js scene initialized')
-        } else {
-          await initDormRoomThreeJS()
-        }
+        await initDormRoomThreeJS()
       } catch (error) {
         console.error('Error initializing Three.js:', error)
       }
@@ -269,7 +285,7 @@ export default function Home() {
         threeJSRendererRef.current = null
       }
     }
-  }, [showThreeJS, viewMode, buildData])
+  }, [showThreeJS])
 
   // Cleanup Three.js when component unmounts
   useEffect(() => {
@@ -784,6 +800,15 @@ export default function Home() {
 
   return (
     <>
+      {/* Loading overlay: 5s on open + during ~43s video upload/processing; fades in and out */}
+      {showOverlay && (
+        <LoadingOverlayInner
+          isFadingOut={isFadingOut}
+          uploading={uploading}
+          uploadStatus={uploadStatus}
+        />
+      )}
+
       <header>
       <img
   src="/Brick.png"
@@ -907,9 +932,14 @@ export default function Home() {
               )}
               <div className="zoom-controls">
                 <button 
-                  className={`zoom-btn ${viewMode === 'lego' ? 'zoom-btn-active' : ''}`}
-                  onClick={() => setViewMode(m => m === 'scene' ? 'lego' : 'scene')}
-                  title={viewMode === 'lego' ? 'Switch to 3D scene' : 'Switch to LEGO build'}
+                  className="zoom-btn"
+                  onClick={() => {
+                    const a = document.createElement('a')
+                    a.href = '/dorm_room_lego.ldr'
+                    a.download = 'dorm_room_lego.ldr'
+                    a.click()
+                  }}
+                  title="Download dorm room LEGO (.ldr)"
                 >
                   🧱
                 </button>
@@ -1098,47 +1128,6 @@ export default function Home() {
           isOpen={showInstructionBook}
           onClose={() => setShowInstructionBook(false)}
         />
-      )}
-
-      {/* LEGO Design Modal */}
-      {showLegoDesign && (
-        <div 
-          className="nothing-modal-overlay"
-          onClick={() => setShowLegoDesign(false)}
-        >
-          <div 
-            className="nothing-modal-content"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxHeight: '80vh', overflowY: 'auto' }}
-          >
-            <h2>LEGO Design for {projectName}</h2>
-            <p><strong>Total Pieces: {pieceCount.total_pieces}</strong></p>
-            <div style={{ 
-              whiteSpace: 'pre-wrap', 
-              fontFamily: 'monospace',
-              backgroundColor: '#f5f5f5',
-              padding: '16px',
-              borderRadius: '8px',
-              marginTop: '16px'
-            }}>
-              {legoDesignText}
-            </div>
-            <button
-              style={{
-                marginTop: '16px',
-                padding: '10px 20px',
-                backgroundColor: '#4CAF50',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              onClick={() => setShowLegoDesign(false)}
-            >
-              Close
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Model Details Modal */}

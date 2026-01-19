@@ -28,6 +28,34 @@ body {
   flex-direction: column;
 }
 
+/* --- LOADING OVERLAY (Lottie: initial 5s + video ~43s) --- */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+.loading-overlay--fade-in {
+  opacity: 0;
+}
+.loading-overlay--fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+.loading-overlay-status {
+  font-size: 14px;
+  color: #555;
+  margin: 0;
+  font-weight: 500;
+}
+
 /* --- HEADER --- */
 header {
   height: 80px;
@@ -713,6 +741,8 @@ h1 em {
 .full-set-buttons {
   display: flex;
   justify-content: center;
+  align-items: center;
+  width: 100%;
   gap: 10px;
   margin-top: 12px;
 }
@@ -727,10 +757,12 @@ h1 em {
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  text-align: center;
+  line-height: 1;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
 }
@@ -760,6 +792,7 @@ h1 em {
 .view-details-btn i,
 .switch-model-btn i {
   font-size: 14px;
+  flex-shrink: 0;
 }
 
 .bb-coin-btn {
